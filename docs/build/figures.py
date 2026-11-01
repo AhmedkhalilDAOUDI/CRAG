@@ -33,7 +33,7 @@ def gantt():
 
 def positioning():
     pts = [("Classic RAG", 1, 1), ("Corrective RAG", 1.6, 1.5), ("Self-RAG", 2.6, 1.7), ("LightRAG", 3.2, 3.4),
-           ("HippoRAG", 3.6, 4.2), ("Think-on-Graph", 2.2, 4.5), ("MS GraphRAG", 4.6, 3.6), ("CRAG", 3.0, 4.6)]
+           ("HippoRAG", 3.6, 4.2), ("Think-on-Graph", 1.5, 4.3), ("MS GraphRAG", 4.6, 3.6), ("CRAG", 3.0, 4.6)]
     fig, ax = plt.subplots(figsize=(6, 4), dpi=200)
     for name, x, y in pts:
         c = CLAY if name == "CRAG" else INK

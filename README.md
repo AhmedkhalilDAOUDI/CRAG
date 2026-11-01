@@ -97,7 +97,16 @@ Protections: Pydantic validation, upload allow-list and 20 MB cap, admin token, 
 
 CRAG was compared with a classic RAG baseline: the same models, chunks and prompts with the graph steps switched off. The test corpus (38 anonymised public profile documents, 2 of them scanned) was used only for validation and is not distributed in this repository.
 
-{{RESULTS_TABLE}}
+| Metric | Run 1 CRAG | Run 1 classic RAG | Run 2 CRAG | Run 2 classic RAG |
+|---|---|---|---|---|
+| Expert finding, Precision@5 | 0.78 | 0.83 | 0.83 | 0.83 |
+| Single-hop, hit rate | 0.74 | 0.83 | 0.79 | 0.79 |
+| Single-hop, correctness (1-5, LLM judge) | 3.61 | 3.96 | 4.08 | 3.92 |
+| Single-hop, faithfulness (1-5, LLM judge) | 3.61 | 4.30 | 4.25 | 3.92 |
+| Relational, exact match | 0.92 | 0.00 | 0.92 | 0.50 |
+| Relational, hit rate | 0.83 | 0.83 | 0.92 | 0.83 |
+
+Mean latency per single-hop question (run 1, unthrottled): CRAG 5.5 s, classic RAG 2.2 s. Run-2 latencies are not meaningful: requests were deliberately paced to respect the API rate limit.
 
 Two iterations were run. The first exposed three flaws in the evaluation setup and one design flaw (degree bias in expert ranking). The second run uses the fixed version. The fixes were designed after seeing the first results on the same questions, so second-run numbers are optimistic. Details are in the report and in [docs/CRAG_DETAILS.txt](docs/CRAG_DETAILS.txt).
 

@@ -12,7 +12,7 @@ Enterprises accumulate knowledge in large, heterogeneous document collections, b
 
 This project presents **CRAG**, an intelligent knowledge management platform that combines a **knowledge graph** with an LLM. CRAG ingests documents (including scanned ones, through OCR), uses an LLM to extract entities and typed relations into a **Neo4j** property graph that also holds dense vector indexes, and answers natural-language questions with a **LangGraph** workflow that fuses semantic passage retrieval with multi-hop graph expansion, grades its own evidence and retries when the evidence is weak, and generates answers that cite both passages and graph facts. From those citations the platform derives an explanation of each answer as a path in the graph. The same machinery identifies the experts of a domain and recommends similar documents. A web interface visualises the graph and the reasoning path of every answer. The platform is containerised with Docker and deployed publicly.
 
-CRAG was evaluated against a classic passages-only RAG baseline that shares the same models and chunks. On a validation corpus, graph augmentation improved expert-finding precision and relational question answering while keeping single-hop answer quality comparable (Chapter 5).
+CRAG was evaluated against a classic passages-only RAG baseline that shares the same models, chunks and prompts. On a validation corpus, graph augmentation raised exact-match accuracy on relational questions from {{REL_EM_V}} to {{REL_EM_G}}, matched the baseline on expert finding (Precision@5 {{EXP_CRAG}}) and on simple questions, and made responses about 2.5 times slower. A first evaluation run exposed flaws in the evaluation setup and a degree bias in expert ranking; both runs are reported.
 
 **Keywords:** knowledge graph, large language model, retrieval-augmented generation, GraphRAG, Neo4j, LangGraph, expert finding, knowledge management.
 
@@ -22,7 +22,7 @@ Les entreprises accumulent leurs connaissances dans de vastes collections docume
 
 Ce projet présente **CRAG**, une plateforme intelligente de gestion des connaissances qui associe un **graphe de connaissances** à un LLM. CRAG ingère des documents (y compris numérisés, grâce à l'OCR), utilise un LLM pour en extraire des entités et des relations typées dans un graphe **Neo4j** qui contient aussi des index vectoriels, et répond aux questions en langage naturel grâce à un workflow **LangGraph** qui fusionne la recherche sémantique de passages et l'expansion multi-sauts dans le graphe, évalue la qualité de ses preuves et relance la recherche si nécessaire, puis génère des réponses citant passages et faits du graphe. Ces citations permettent d'expliquer chaque réponse par un chemin dans le graphe. Le même mécanisme identifie les experts d'un domaine et recommande des documents similaires. Une interface web visualise le graphe et le raisonnement de chaque réponse. La plateforme est conteneurisée avec Docker et déployée en ligne.
 
-Comparé à un RAG classique utilisant les mêmes modèles, CRAG améliore la précision de l'identification d'experts et la réponse aux questions relationnelles, tout en conservant une qualité comparable sur les questions simples (chapitre 5).
+Comparé à un RAG classique utilisant les mêmes modèles, CRAG fait passer l'exactitude sur les questions relationnelles de {{REL_EM_V}} à {{REL_EM_G}}, égale le RAG classique pour l'identification d'experts et les questions simples, et rend les réponses environ 2,5 fois plus lentes (chapitre 5).
 
 **Mots-clés :** graphe de connaissances, grand modèle de langage, RAG, GraphRAG, Neo4j, LangGraph, identification d'experts, gestion des connaissances.
 
@@ -271,7 +271,7 @@ Figure 3.3 lists every step, who performs it (a person, a deterministic tool, or
 
 ## Development environment
 
-The platform is written in Python 3.12 (development under 3.14) with about 1,200 lines of application code, organised in six modules: `config` (settings), `llm` (model client), `ingest` (loading, OCR, chunking, extraction), `store` (the two backends), `workflow` (the LangGraph workflow) and `api` (REST API). The web interface is plain HTML, CSS and JavaScript. The code is versioned on GitHub.
+The platform is written in Python 3.12 (development under 3.14) with about 1,000 lines of Python in the platform package (plus about 400 lines of web code and 400 lines of scripts and tests), organised in six modules: `config` (settings), `llm` (model client), `ingest` (loading, OCR, chunking, extraction), `store` (the two backends), `workflow` (the LangGraph workflow) and `api` (REST API). The web interface is plain HTML, CSS and JavaScript. The code is versioned on GitHub.
 
 ## Model access
 

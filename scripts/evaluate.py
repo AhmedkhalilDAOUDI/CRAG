@@ -199,13 +199,24 @@ def charts(summary):
     ax.set_ylabel("mean latency per question (s)"); fig.tight_layout(); fig.savefig(FIG / "latency.png"); plt.close(fig)
 
 
+def resumable(name, run):
+    """Each benchmark is saved as soon as it finishes, so a rate-limited run can resume (--fresh to restart)."""
+    part = OUT / f"part_{name}.json"
+    if part.exists() and "--fresh" not in sys.argv:
+        print("reusing", part.name, flush=True)
+        return json.loads(part.read_text())
+    rows = run()
+    part.write_text(json.dumps(rows))
+    return rows
+
+
 def main():
     store = get_store()
     OUT.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
-    experts = bench_experts(store)
-    single = bench_singlehop(store)
-    rel = bench_relational(store)
+    experts = resumable("experts", lambda: bench_experts(store))
+    single = resumable("single_hop", lambda: bench_singlehop(store))
+    rel = resumable("relational", lambda: bench_relational(store))
     summary = summarise(experts, single, rel)
     summary["corpus"] = store.stats()
     summary["duration_s"] = round(time.time() - t0)

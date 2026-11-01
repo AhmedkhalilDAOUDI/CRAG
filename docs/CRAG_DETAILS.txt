@@ -1,0 +1,636 @@
+================================================================================
+CRAG: THE WHOLE PROJECT, STEP BY STEP, FROM FIRST PRINCIPLES
+Knowledge Graph + LLM platform for enterprise knowledge management
+Daoudi Ahmed Khalil, MDSE, Ecole Hassania des Travaux Publics, 2025/2026
+Supervisor: Dr. Abdelali El Bouchti
+================================================================================
+
+HOW TO READ THIS FILE
+---------------------
+Part 1 explains the ideas you need before anything else (what a model is, what a
+vector is, what a graph is). Part 2 explains the technologies, one by one, and why
+each was chosen. Part 3 walks through every step we actually performed to build
+CRAG, in the order we did them, with the file that contains the code. Part 4 is
+the query workflow, step by step. Part 5 covers testing, evaluation, deployment
+and operations. Part 6 lists the decisions and their trade-offs, so you can defend
+them. Part 7 is a command cheat-sheet.
+
+If a word is unclear, look it up in the keyword sheet: CODE/docs/keywords.png.
+The full picture is in CODE/docs/workflow.png and CODE/docs/pipeline_roles.png.
+
+
+################################################################################
+PART 1. FIRST PRINCIPLES
+################################################################################
+
+1.1 The problem we solve
+------------------------
+A company's knowledge is spread across thousands of documents: CVs, procedures,
+reports, project files. Two problems follow:
+  (a) Finding: a keyword search returns documents, not answers, and misses
+      documents that use different words for the same idea.
+  (b) Connecting: the most useful knowledge is a relation between facts spread
+      over several documents ("who knows SQL AND has done data migrations?").
+      No single document says it.
+The internship brief asks for a platform that collects documents, builds a
+knowledge graph, identifies relations between concepts, answers complex questions
+in natural language, explains its answers from the graph, identifies experts,
+recommends similar documents, and visualises the relations. That platform is CRAG.
+
+1.2 What a language model is
+----------------------------
+A computer only manipulates numbers. To process text, text is cut into pieces
+called TOKENS (roughly word fragments: "knowledge" might be one token,
+"Hassania" two or three). Each token has an id number.
+
+A LARGE LANGUAGE MODEL (LLM) is a function with billions of adjustable numbers
+(PARAMETERS). Given a sequence of tokens it outputs, for every possible next
+token, a probability. Generating text = repeatedly picking a likely next token
+and appending it. The parameters were adjusted (TRAINED) on trillions of tokens
+of text so that its predictions match real text. Prediction at that scale forces
+the model to learn grammar, facts and some reasoning.
+
+The architecture inside is the TRANSFORMER (Vaswani et al., 2017, paper 19 in
+RESEARCH PAPERS). Its key mechanism, ATTENTION, lets every token look at every
+other token in the input and decide which ones matter for it.
+
+Important limits of an LLM, which motivate the whole project:
+  - It only knows what was in its training data, frozen at a date. It has never
+    seen your company's private documents.
+  - It can HALLUCINATE: produce fluent, confident, false statements, because it
+    generates plausible text, not verified text.
+  - Its input window (CONTEXT WINDOW) is limited and expensive; you cannot paste
+    a whole company archive into one prompt. Even when you can, models use the
+    middle of long inputs badly ("Lost in the Middle", paper 21).
+
+TEMPERATURE controls randomness when picking tokens. 0 = always the most likely
+token (deterministic, used for extraction); higher = more varied.
+
+A PROMPT is the text we send: usually a SYSTEM message (rules, role) and a USER
+message (the task and data).
+
+1.3 What an embedding is
+------------------------
+An EMBEDDING model turns a text into a fixed-length list of numbers, a VECTOR.
+Ours outputs 2,048 numbers per text. It is trained so that texts with similar
+MEANING get vectors pointing in similar directions, even with different words:
+"payroll processing" and "salary administration" end up close.
+
+How we measure "close": COSINE SIMILARITY.
+  cos(a, b) = (a . b) / (|a| |b|)
+  where a . b = a1*b1 + a2*b2 + ... + an*bn (the dot product) and |a| is the
+  length sqrt(a1^2 + ... + an^2).
+  It is 1 when the vectors point the same way, 0 when unrelated, -1 when opposite.
+  If every vector is first divided by its length (L2-NORMALISED, length 1), the
+  cosine is just the dot product. We normalise every vector once, so ranking
+  thousands of passages is one matrix multiplication: scores = M @ q.
+
+This is SEMANTIC SEARCH: find passages whose meaning is close to the question.
+
+1.4 What RAG is
+---------------
+RETRIEVAL-AUGMENTED GENERATION (Lewis et al., 2020, paper 01):
+  1. Retrieve: find the few passages most relevant to the question
+     (usually by embedding similarity).
+  2. Augment: paste those passages into the prompt.
+  3. Generate: ask the LLM to answer USING ONLY those passages, and cite them.
+This gives the model private, up-to-date knowledge without retraining it, and
+lets us check each claim against a source. It is the standard architecture
+(survey: Gao et al., 2023, paper 02).
+
+Why classic RAG is not enough: it retrieves passages independently. A question
+that needs two facts from two different documents, or a question about
+relations ("who is connected to what"), is answered badly, because no single
+passage is similar to the whole question.
+
+1.5 What a knowledge graph is
+-----------------------------
+A GRAPH is a set of NODES (points) and EDGES (links between two nodes).
+A KNOWLEDGE GRAPH (Hogan et al., 2021, paper 06) is a graph where nodes are
+real-world things (ENTITIES: a person, a skill, a company) and edges are typed
+RELATIONS between them. Each fact is a TRIPLE (subject, predicate, object):
+    (Employee 16353584, HAS_SKILL, AutoCAD)
+    (AutoCAD, USED_FOR, Construction Drawings)
+Following edges one after another is a MULTI-HOP traversal: from a skill to the
+people who have it, to the projects those people did. That is exactly the kind
+of relational question classic RAG struggles with.
+
+1.6 GraphRAG: combining both
+----------------------------
+GRAPHRAG = RAG that retrieves from a knowledge graph as well as from text
+(Edge et al., 2024, paper 03; survey Peng et al., 2024, paper 04; roadmap Pan et
+al., 2023, paper 05). The LLM is used twice: once at ingestion time to BUILD the
+graph (read text, write triples: Zhu et al., 2023, paper 07), and once at query
+time to ANSWER using passages + graph facts. LightRAG (paper 08) and HippoRAG
+(paper 09) are lighter variants that, like CRAG, link query words to entities
+and expand around them, instead of Microsoft GraphRAG's expensive community
+summaries.
+
+1.7 The corrective idea
+-----------------------
+Retrieval sometimes returns weak evidence. CORRECTIVE RAG (Yan et al., 2024,
+paper 12) and SELF-RAG (Asai et al., 2023, paper 13) add a step where a model
+judges the retrieved evidence and, if it is poor, triggers a new retrieval.
+CRAG does a light version: grade once, rewrite the query, retry once.
+(Name note: our platform is called CRAG by choice; it is not the Yan et al.
+system, though it borrows the corrective step. Be ready to say this.)
+
+1.8 Agents and workflows
+------------------------
+When an LLM application has several steps with decisions between them
+("if the evidence is weak, go back"), it is natural to model it as a STATE
+MACHINE: a set of steps (nodes), a shared memory (state), and rules for which
+step comes next (edges, some conditional). ReAct (paper 14) is the classic
+"reason then act" agent pattern. LANGGRAPH is the library we use to declare that
+state machine explicitly. We keep it a fixed workflow rather than a free agent:
+it is predictable, testable and cheaper.
+
+
+################################################################################
+PART 2. THE TECHNOLOGIES AND WHY EACH ONE
+################################################################################
+
+Required by the brief: LLM, RAG, LangGraph, GraphRAG, OCR, Neo4j, Docker.
+
+2.1 NVIDIA NIM API (the models)
+  What: a hosted service (integrate.api.nvidia.com) exposing models through the
+  same HTTP format as OpenAI (POST /v1/chat/completions, POST /v1/embeddings).
+  Why: the API key was provided for this project; one key gives both a chat
+  model and an embedding model; no GPU needed on an 8 GB laptop.
+  What we found when testing (October-November 2026): the older Llama 3.3 and
+  nv-embedqa-e5 models had been retired (HTTP 410 "Gone"). We listed the
+  available models and tested each. Chosen:
+    - Chat:      nvidia/nemotron-3.5-lightning-30b-a3b
+                 A Mixture-of-Experts model: 30B parameters in total but only
+                 about 3B active per token, so it is fast (about 0.7 s for a short
+                 reply). It is a "reasoning" model that can think before
+                 answering; we pass chat_template_kwargs.enable_thinking=false
+                 to turn that off, because our tasks need speed and clean JSON.
+    - Embedding: nvidia/nemotron-3.5-embed-1b, 2,048-dimensional vectors.
+                 It takes input_type = "passage" for documents and "query" for
+                 questions (asymmetric retrieval, as in E5 / NV-Embed, papers
+                 17-18).
+  File: CODE/crag/llm.py. Every call retries with exponential backoff
+  (1, 2, 4, 8... seconds) on rate-limit (429) and server errors.
+  The key is read from the environment variable NVIDIA_API_KEY (file .env,
+  never committed to Git).
+
+2.2 Python
+  The language of the whole backend: the AI ecosystem (LangGraph, Neo4j driver,
+  NumPy) is Python-first.
+
+2.3 OCR: Tesseract (+ pypdf, pypdfium2)
+  pypdf reads the text layer that digital PDFs contain.
+  Scanned PDFs and photos have no text layer, only pixels. OCR (Optical Character
+  Recognition) finds the letters in the pixels. We use Tesseract 5 (open-source,
+  originally HP then Google) through pytesseract. pypdfium2 (Google's PDFium
+  engine) renders a PDF page into an image at 2x scale, which Tesseract reads.
+  Rule (crag/ingest.py, load_text): if the PDF gives fewer than 20 characters
+  per page on average, it is treated as scanned and OCR'd.
+
+2.4 Neo4j (graph database) and Cypher
+  Neo4j stores nodes and relationships natively and queries them with Cypher:
+      MATCH (p:Entity {type:'Person'})-[:RELATED {type:'HAS_SKILL'}]->(s)
+      WHERE s.key = 'sql' RETURN p.name
+  Since version 5.11 it also has VECTOR INDEXES (HNSW), so text vectors and graph
+  live in the same database: one system instead of graph DB + vector DB.
+  HNSW (Hierarchical Navigable Small World) is a layered proximity graph:
+  search starts at a coarse top layer and descends, finding nearest vectors in
+  roughly logarithmic time instead of scanning all of them.
+
+2.5 NetworkX + NumPy (the second backend)
+  The same graph held in memory (NetworkX MultiDiGraph) and the vectors in a
+  NumPy matrix, saved as two files: graph.json and vectors.npz (float16 to halve
+  the size). Why a second backend: (1) the public serverless deployment cannot
+  run a database server, (2) tests run in a second without Docker, (3) the
+  expensive extraction is done once and then copied into Neo4j.
+
+2.6 LangGraph
+  Declares the query workflow as a graph of Python functions sharing a typed
+  state (crag/workflow.py, build_graph). Gives us: explicit steps, a
+  conditional loop (corrective retrieval), a trace of each step, easy testing.
+
+2.7 FastAPI + Uvicorn
+  FastAPI turns Python functions into HTTP endpoints with automatic input
+  validation (Pydantic models) and OpenAPI docs at /docs. Uvicorn is the server
+  process that runs it.
+
+2.8 Front-end: HTML, CSS, JavaScript, Cytoscape.js
+  No framework is needed for one page: plain HTML/CSS/JS served by FastAPI.
+  Cytoscape.js draws graphs (nodes, edges, force-directed layout). The design
+  borrows Anthropic's website language: ivory paper background, slate ink,
+  a clay accent, a serif display typeface (Newsreader) with a clean sans-serif
+  (Public Sans). Dark mode follows the operating system setting.
+
+2.9 Docker and Docker Compose
+  Docker packages the app with its exact dependencies (Python 3.12, Tesseract)
+  into an image that runs identically on any machine. Compose starts two
+  containers together: neo4j and crag, on one private network, with a health
+  check so the API starts only when Neo4j is ready.
+
+2.10 GitHub, Vercel
+  GitHub hosts the code. Vercel runs the API as a serverless Python function and
+  serves the read-only memory snapshot, which gives a public demo URL.
+
+
+################################################################################
+PART 3. WHAT WE DID TO BUILD IT, STEP BY STEP
+################################################################################
+
+STEP 0. Read the brief and fix the scope
+  The brief lists 9 abilities. We mapped each to a component:
+    collect knowledge            -> ingestion pipeline (Step 4-11)
+    build the graph              -> extraction + store (Steps 8-11)
+    identify relations           -> LLM relation extraction (Step 8)
+    answer complex questions     -> LangGraph workflow (Part 4)
+    explain answers from graph   -> cited reasoning path (Part 4, node explain)
+    identify experts             -> expert ranking (Part 4, node experts)
+    recommend similar documents  -> hybrid similarity (Part 4, node recommend)
+    visualise relations          -> Cytoscape graph in the UI
+    "better than classic RAG"    -> evaluation against a passages-only baseline
+
+STEP 1. Check the machine and tools
+  MacBook Air M2, 8 GB RAM: no local LLM of useful size fits, which confirms the
+  hosted API choice. Checked: Python 3.14, Docker (Colima/Docker Desktop),
+  Tesseract, Chrome (used to render diagrams and PDFs), GitHub CLI logged in.
+
+STEP 2. Test the API before writing code
+  Listed models (GET /v1/models: 85 models). Discovered the retired models (HTTP
+  410). Tested 4 chat models and 3 embedding models with tiny requests; kept the
+  two that answered (2.1). Tested "thinking off" mode: the JSON reply arrived in
+  0.66 s.
+  Lesson: always verify the external dependency first; documentation and
+  tutorials go stale.
+
+STEP 3. Collect research papers
+  22 papers downloaded from arXiv into RESEARCH PAPERS, renamed by theme and
+  number. Titles were checked by reading page 1 of each PDF. See the index
+  README in that folder for why each one matters.
+
+STEP 4. Get test documents
+  No company documents were available, so for TESTS ONLY we used the public
+  Kaggle "Resume Dataset" (snehaanbhawal/resume-dataset, 2,484 resume PDFs in
+  24 job categories). Downloaded anonymously with kagglehub.
+  scripts/prepare_testdata.py picks, with a fixed random seed (42), 6 resumes
+  from each of 6 categories (IT, Engineering, Finance, HR, Construction,
+  Healthcare) = 36 PDFs, and renders 2 of them as PNG images to simulate scanned
+  documents and exercise OCR. Resumes are a good stand-in for enterprise
+  knowledge because they contain people, skills, roles, tools, and projects:
+  exactly what expert finding needs. They are anonymised: names are replaced by
+  "Company Name", "City"..., so each resume is treated as the profile of
+  "Employee <file id>".
+  These documents are NOT part of the report or the presentation.
+
+STEP 5. Configuration (crag/config.py)
+  All settings come from environment variables with safe defaults: model names,
+  backend (memory/neo4j), chunk size 1,200, overlap 200, top_k 6 passages,
+  2 graph hops, read-only flag, admin token, upload size limit 20 MB.
+  Why: the same code runs on a laptop, in Docker and on Vercel by changing
+  variables, never code (the "12-factor app" principle).
+
+STEP 6. Model client (crag/llm.py)
+  chat(): sends messages, temperature, max_tokens, thinking off; returns text.
+  parse_json(): models sometimes wrap JSON in ``` fences or add a sentence; we
+  strip fences, find the first { or [, and decode just that object.
+  chat_json(): if the reply is not valid JSON, we send it back once asking for
+  "only valid JSON".
+  embed(): batches of 32 texts, input_type passage/query, truncation at the end,
+  then L2-normalisation so cosine = dot product.
+
+STEP 7. Loading and OCR (crag/ingest.py: load_text, clean)
+  .txt/.md: read directly. Images: Tesseract. PDF: pypdf; if too little text,
+  OCR every page. Then clean(): remove null bytes, collapse spaces, collapse
+  blank lines.
+  Tested: the scanned PNG gave 3,941 characters of correct text; the normal PDF
+  gave 5,282 characters without OCR.
+
+STEP 8. Chunking (crag/ingest.py: chunk_text)
+  Why chunk at all: (1) embeddings represent a short text best; a whole CV in one
+  vector blurs everything; (2) the prompt has limited room; (3) a citation should
+  point to a precise passage.
+  How: split into sentences (after . ! ? or at blank lines), then pack sentences
+  greedily into windows of at most 1,200 characters. When a window is full, the
+  next one starts with the last 200 characters of the previous one (OVERLAP), so
+  a fact cut at a boundary still appears whole in one chunk. A "sentence" longer
+  than a window (tables, lists without punctuation) is hard-split.
+  Each chunk gets an id "<doc_id>:<index>"; doc_id = first 12 hex characters of
+  the SHA-1 hash of the file name (stable across runs).
+  Result: a typical resume gives 6 to 12 chunks.
+
+STEP 9. Knowledge extraction with the LLM (crag/ingest.py: extract)
+  For each chunk, one LLM call with a system prompt that defines:
+    - 10 allowed entity types: Person, Organization, Skill, Technology, Concept,
+      Project, Procedure, Role, Certification, Location;
+    - relations as UPPER_SNAKE_CASE verbs (HAS_SKILL, WORKED_AT, USES...);
+    - rules: canonical names, both ends of a relation must be listed entities,
+      at most 15 entities, ignore placeholders;
+    - the exact JSON shape to return.
+  For profile documents we also tell the model the document's subject
+  ("Employee 16353584") so first-person facts ("Managed a team of 12") attach to
+  that person node. Temperature 0 for repeatability. 4 chunks are processed in
+  parallel (thread pool).
+  Post-processing in code (never trust the model blindly):
+    - unknown types become Concept;
+    - placeholders ("Company Name", "City", "State") are dropped. We found the
+      model extracts them despite the instruction; left in, "Company Name" would
+      become a hub connecting every employee to every other, and graph
+      expansion would return everyone;
+    - relations whose ends are not in the entity list are dropped;
+    - a chunk whose extraction fails returns nothing instead of crashing the run.
+
+STEP 10. Entity resolution (crag/ingest.py: norm)
+  The same thing appears with different spellings: "Microsoft Excel",
+  "microsoft-excel", "MICROSOFT EXCEL". The key of an entity is its name
+  lower-cased with punctuation replaced by spaces (keeping + and # for C++ and
+  C#). Equal keys = same node. Simple and predictable; its limit (synonyms) is
+  listed in OTHER_IDEAS.md.
+
+STEP 11. Embedding and storing (crag/ingest.py: ingest_file, crag/store.py)
+  Embed every chunk ("passage") and every entity as the text
+  "name (type): description". Entity vectors let a question find entities by
+  meaning, not only exact name.
+  The graph model (both backends):
+    (:Document {id, title, source, author, ocr, chars})
+    (:Document)-[:HAS_CHUNK]->(:Chunk {id, text, idx, embedding})
+    (:Chunk)-[:MENTIONS]->(:Entity {key, name, type, description, embedding})
+    (:Entity)-[:RELATED {type, description, doc_id}]->(:Entity)
+    (:Entity {type:'Person'})-[:AUTHORED]->(:Document)
+  Why RELATED with a "type" property instead of one Neo4j relationship type per
+  verb: the LLM invents many verbs; Cypher cannot parameterise relationship
+  types; one generic type with a property keeps queries simple.
+  Neo4jStore creates uniqueness constraints and two cosine vector indexes of
+  dimension 2,048. MERGE (not CREATE) makes writes idempotent.
+  MemoryStore keeps dictionaries + a NetworkX MultiDiGraph and saves
+  graph.json + vectors.npz after each document (so a crash loses at most one
+  document; the ingest script also skips documents already stored, so it can be
+  resumed).
+  copy_memory_to_neo4j() loads a snapshot into Neo4j without calling the LLM
+  again (scripts/ingest.py --to-neo4j).
+
+STEP 12. Run the ingestion
+  Command: python scripts/ingest.py data/testdocs --profiles
+  About 30-50 s per document (the extraction calls dominate). The log is in
+  data/ingest.log. The resulting graph size is printed at the end and on the
+  "Knowledge graph" section of the UI (see Part 5 results).
+
+
+################################################################################
+PART 4. THE QUERY WORKFLOW (crag/workflow.py), NODE BY NODE
+################################################################################
+
+The workflow is a LangGraph StateGraph. The STATE is a dictionary carried from
+node to node: question, mode, intent, keywords, query, attempts, query vector,
+seed entities, chunks, facts, graph, experts, recommendations, answer,
+explanation, trace.
+
+Wiring:
+  analyze -> retrieve -> grade -> (retry?) retrieve
+                               -> experts   (if intent = experts)   -> generate
+                               -> recommend (if intent = recommend) -> generate
+                               -> generate  (otherwise)
+  generate -> explain -> END
+  In "vector" mode (the classic-RAG baseline): retrieve -> generate directly.
+
+NODE 1: analyze
+  One LLM call returns {"intent": "qa"|"experts"|"recommend", "entities": [...]}.
+  Intent decides the branch; entities are the words to link to the graph.
+  If the call fails we fall back to intent "qa" (the workflow never dies here).
+
+NODE 2: retrieve
+  a) Embed the question as a "query" vector; take the 18 (3 x top_k) most similar
+     chunks: the VECTOR ranking.
+  b) ENTITY LINKING: entities whose key equals a normalised keyword, plus the 8
+     entities nearest to the question vector if their cosine >= 0.35 (below that,
+     links were noise in our tests). These are the SEED entities.
+  c) GRAPH EXPANSION: all entities within 2 hops of the seeds (direction
+     ignored), at most 60, closest first, then by degree; plus the relations
+     among them. These relations become the FACTS, sorted so facts touching a
+     seed come first; 25 are kept.
+  d) GRAPH ranking of chunks: chunks that mention the seeds or their 1-hop
+     neighbours, ranked by how many of those entities they mention.
+  e) FUSION with Reciprocal Rank Fusion (Cormack et al., 2009):
+        score(chunk) = sum over rankings of 1 / (60 + rank)
+     A chunk ranked well by both lists wins; no need to calibrate cosine scores
+     against mention counts, which live on different scales. 6 chunks are kept:
+     the 3 best semantic (vector) hits ALWAYS, then the 3 best remaining fused
+     chunks. Reason (found in evaluation iteration 1, Part 5.4): pure fusion
+     sometimes pushed the single most relevant passage out, hurting simple
+     questions. Rule: the graph adds evidence, it never displaces the best
+     semantic evidence. Each chunk remembers whether it came from "vector",
+     "graph" or "both".
+
+NODE 3: grade (the corrective step)
+  The LLM sees the question and the first 4 chunks (400 characters each) and
+  returns {"sufficient": bool, "better_query": "..."}. If insufficient and this
+  was the first attempt, the query is replaced and we go back to retrieve; chunks
+  found by the first attempt are kept as extra evidence. At most one retry, to
+  bound cost and latency.
+
+NODE 4a: experts (only for "who knows / who is expert" questions)
+  Every candidate person gets three signals, each scaled to [0, 1] (divided by
+  the largest value among candidates):
+    graph    = graph EVIDENCE: +1 for each relation between the person and a
+               seed entity (e.g. Employee 12 -HAS_SKILL-> Payroll), +0.25 for
+               each relation to a direct neighbour of a seed;
+    coverage = how many DISTINCT seed entities the person is linked to, through
+               a graph relation, an entity mentioned in their documents, or the
+               entity's name appearing in one of their top passages (lexical
+               fallback, because extraction keeps at most 15 entities per chunk
+               and long skill lists lose some);
+    semantic = best cosine similarity between the question and any chunk of
+               their documents.
+  score = 0.4 graph + 0.3 coverage + 0.3 semantic. Top 5 returned with their
+  evidence as numbered facts [F#] (so the answer can cite them) and the list of
+  question entities each person covers.
+  History: version 1 used "1/hops proximity + 0.5 per relation of any kind".
+  Evaluation showed it favoured people with long documents (many relations of
+  any kind = high degree), whatever the topic: a DEGREE BIAS. Version 2 counts
+  only relations to the question's entities. Coverage made "who knows X AND Y"
+  questions work: a person linked to both entities outranks one linked to one.
+  Weights were set by hand (to be tuned: see OTHER_IDEAS #18).
+
+NODE 4b: recommend (for "similar / relevant documents" questions; also the
+  /api/recommend endpoint, which starts from a document instead of a question)
+    semantic = best chunk cosine of each candidate document to the query (or to
+               the source document's mean chunk vector);
+    shared   = Jaccard overlap of the entity sets: |A n B| / |A u B|;
+    score    = 0.7 semantic + 0.3 shared.
+
+NODE 5: generate
+  The prompt contains: numbered passages [S1]..[S6], each labelled with its
+  document id AND the document's subject when known ("about Employee 123";
+  given in both modes, so the classic-RAG baseline can name people too),
+  numbered graph facts
+  [F1]..[F25] written "A -TYPE-> B", and, if present, the ranked experts or
+  recommended documents. Rules: answer only from these, cite every claim, say
+  when the context is insufficient, answer in the question's language.
+
+NODE 6: explain
+  No LLM call. Regular expressions find which [S#] and [F#] the answer cited.
+  The cited facts form the REASONING PATH; the cited passages become the source
+  list with their origin (vector/graph/both). The UI draws the neighbourhood with
+  Cytoscape: seed entities ringed, cited relations in clay. Because it comes from
+  what the answer actually cited, the explanation is faithful to the answer, not
+  a second story invented after the fact.
+
+The trace: every node appends {step, time, details}, shown under "Workflow
+steps" in the UI and returned by the API: useful to debug and to demonstrate.
+
+
+################################################################################
+PART 5. API, INTERFACE, TESTING, EVALUATION, DEPLOYMENT
+################################################################################
+
+5.1 API (crag/api.py)
+  GET  /api/health      status, backend, models, read-only flag
+  GET  /api/stats       counts of documents, chunks, entities, relations, types
+  GET  /api/documents   list of documents
+  POST /api/ask         {question (2-2000 chars), mode: graph|vector} -> answer,
+                        sources, facts, graph, experts, recommendations, trace
+  GET  /api/experts?topic=...   shortcut to an expert question
+  GET  /api/recommend?doc_id=   similar documents
+  GET  /api/graph?limit=        the most connected part of the graph
+  POST /api/ingest      upload a file (needs header X-Admin-Token; disabled in
+                        read-only mode; type and size checked)
+  Protections: Pydantic validation (422 on bad input), rate limit of 20 LLM
+  requests per minute per IP (429), upload whitelist (415) and size cap (413),
+  token check (401), read-only switch (403). Interactive docs: /docs.
+
+5.2 Interface (web/)
+  One page: hero with the question box and a mode switch (graph-augmented vs
+  passages only, so the jury can compare live), example questions, the answer
+  with clickable citation chips, the ranked experts with a 3-colour bar showing
+  each signal, the reasoning graph, the sources, the workflow steps; then the
+  whole knowledge graph, the document list with "find similar", and a 5-step
+  "how it works" section. All model text is HTML-escaped before display (no
+  script injection through documents).
+
+5.3 Tests (tests/test_crag.py, run: pytest)
+  11 automated tests that need no network: the LLM and embeddings are replaced
+  by deterministic fakes (a bag-of-words hashing embedding). They cover
+  chunking sizes and overlap, hard splits, name normalisation and placeholders,
+  JSON parsing of messy replies, ingestion and graph building, snapshot
+  save/load round-trip, 2-hop neighbourhoods, RRF ordering, the full workflow in
+  graph mode (expert found, reasoning path present, step order), the baseline
+  mode (no graph, no grading), and the API (validation errors, upload refused
+  without token, recommend 200/404).
+
+5.4 Evaluation (scripts/evaluate.py)
+  Question: does the graph make answers better than classic RAG? Same models,
+  same chunks, only the graph steps switched off in the baseline.
+  Three benchmarks with gold labels that do not come from the system itself:
+    1. Expert finding: 12 questions ("Who are the experts in payroll, benefits
+       and employee relations?"), 2 per job category. Gold = employees whose
+       resume is in that category. Metric: Precision@5 = share of the top 5 that
+       are from the right category. Baseline: rank authors by best passage
+       similarity.
+    2. Single-hop QA: 24 random passages; the LLM writes one factual question
+       and answer from each. Metrics: hit rate (was the source document
+       retrieved?), and an LLM judge scoring correctness and faithfulness 1-5.
+       This benchmark favours plain vector search (the question is written from
+       one passage), so it checks that the graph does not hurt.
+    3. Relational QA: questions built from two graph facts that, together,
+       identify exactly one employee ("Which employee is associated with both X
+       and Y?"), where each fact alone matches 2-6 employees. Metrics: exact
+       match (the answer names the right employee id) and hit rate.
+  Output: data/eval/results.json and charts in docs/eval/. The numbers are in
+  section 5.6.
+  Two iterations were run (this is important to explain honestly):
+    Iteration 1 revealed four problems. Three were flaws of the SETUP:
+      (a) the baseline's passages carried no person name, so it could never
+          answer "which employee" questions (exact match 0.00: unfair);
+      (b) the judge saw passages but not graph facts, so answers built on
+          cited facts were scored "unfaithful";
+      (c) fusion displaced the best semantic passage (lower single-hop hits).
+    One was a flaw of the DESIGN: (d) degree bias in expert ranking.
+    Fixes: (a) every passage is labelled with its document's subject in both
+    modes; (b) the judge sees the facts; (c) the top 3 vector passages are
+    always kept; (d) graph evidence counts only relations to the question's
+    entities.
+    Iteration 2 re-ran all benchmarks. Because the fixes were designed after
+    seeing iteration-1 results on the same questions, iteration-2 numbers are
+    optimistic for CRAG; a fresh question set would be needed to confirm them.
+    Both iterations are reported.
+  Honest limits: small test set; the LLM judge is the same model family; the
+  relational questions are built from the graph, which favours the graph
+  method (that is the point of the benchmark, but say it).
+
+5.5 Deployment
+  Local production: docker compose up -d   (Neo4j + API on port 8080)
+     then: docker compose exec crag python scripts/ingest.py --to-neo4j
+     or ingest new files with the admin token.
+  Public demo: Vercel, read-only, memory snapshot bundled with the function.
+  Secrets: NVIDIA_API_KEY and other secrets are environment variables in .env
+  locally and in the Vercel project settings; .env is in .gitignore.
+
+5.6 Results
+  | Expert finding, Precision@5 | 0.78 | 0.83 | 0.83 | 0.83 |
+  | Single-hop, hit rate | 0.74 | 0.83 | 0.79 | 0.79 |
+  | Single-hop, correctness (1-5, LLM judge) | 3.61 | 3.96 | 4.08 | 3.92 |
+  | Single-hop, faithfulness (1-5, LLM judge) | 3.61 | 4.30 | 4.25 | 3.92 |
+  | Relational, exact match | 0.92 | 0.00 | 0.92 | 0.50 |
+  | Relational, hit rate | 0.83 | 0.83 | 0.92 | 0.83 |
+
+  Mean latency per single-hop question (run 1, unthrottled): CRAG 5.5 s, classic RAG 2.2 s. Run-2 latencies are not meaningful: requests were deliberately paced to respect the API rate limit.
+
+  How to read this:
+  - Relational questions: the big, real gain. With the fair baseline (run 2),
+    CRAG names the right employee in 92% of questions,
+    classic RAG in 50%.
+  - Expert finding on broad topics: a tie. Whole-profile similarity already
+    reveals the domain; the graph adds explicit evidence, not precision.
+    Run 1 shows a badly designed graph signal can even hurt (degree bias).
+  - Simple questions: equal retrieval; judged answers slightly better (treat
+    as "no degradation" because of the small sample and the judge).
+  - Cost: about 2.5 times slower (extra model calls for analysis and grading).
+  - Run 2 is optimistic: its fixes were designed after seeing run 1 on the same
+    questions. Say this before the jury does.
+
+
+################################################################################
+PART 6. DECISIONS AND TRADE-OFFS (what to say when asked "why?")
+################################################################################
+
+D1 Hosted models instead of local ones: 8 GB RAM cannot run a useful LLM; cost:
+   documents leave the company network. Mitigation for production: NVIDIA NIM
+   containers on company GPUs (same API, self-hosted).
+D2 One database for graph and vectors (Neo4j vector index) instead of Neo4j +
+   a separate vector DB: one system to run, back up and secure; joins between
+   vector hits and graph are local.
+D3 Two backends: needed for serverless demo and fast tests; cost: two
+   implementations of the same interface, kept small (about 120 lines each) and
+   covered by the same workflow.
+D4 Generic RELATED edge with a type property: simpler, robust to invented verbs;
+   cost: less schema enforcement (OTHER_IDEAS #9).
+D5 RRF instead of a weighted sum: no score calibration needed; standard and
+   robust.
+D6 Fixed workflow instead of a free agent: predictable cost, testable,
+   explainable; cost: less flexible for unusual questions.
+D7 One corrective retry only: bounds latency (each retry adds about 2 model
+   calls).
+D8 Explanations from citations, not a second LLM call: faithful and free.
+D9 Chunk 1,200 / overlap 200 characters: about 250-300 tokens, a paragraph or
+   two of a CV; small enough to be precise, big enough to keep context.
+D10 2 hops: 1 hop misses "skill -> person -> other skill" chains; 3 hops in a
+   dense graph reaches almost everything.
+
+
+################################################################################
+PART 7. COMMANDS CHEAT-SHEET
+################################################################################
+
+cd CRAG/CODE
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env            # then put your NVIDIA key in it
+python scripts/prepare_testdata.py         # test corpus (needs kagglehub download)
+python scripts/ingest.py data/testdocs --profiles
+uvicorn crag.api:app --port 8080           # open http://localhost:8080
+pytest -q                                   # 11 offline tests
+python scripts/evaluate.py                  # benchmark vs classic RAG
+docker compose up -d                        # Neo4j + API
+python scripts/ingest.py --to-neo4j         # copy snapshot into Neo4j
+Neo4j Browser: http://localhost:7474  (user neo4j, password from .env)
+  Example Cypher:
+    MATCH (p:Entity {type:'Person'})-[r:RELATED]->(s:Entity {type:'Skill'})
+    RETURN p.name, r.type, s.name LIMIT 25

@@ -22,7 +22,8 @@ def data():
     for e in g["edges"]:
         deg[e["source"]] += 1
         deg[e["target"]] += 1
-    return {"g": g, "res": res, "s": res["summary"], "per_doc": per_doc, "types": types, "rels": rels, "deg": deg,
+    v1 = json.loads((ROOT / "data" / "eval" / "results_v1.json").read_text())["summary"]
+    return {"g": g, "res": res, "s": res["summary"], "v1": v1, "per_doc": per_doc, "types": types, "rels": rels, "deg": deg,
             "n_docs": len(g["docs"]), "n_chunks": len(g["chunks"]), "n_ent": len(g["entities"]), "n_rel": len(g["edges"]),
             "ocr_docs": [d for d in g["docs"].values() if d.get("ocr")]}
 
@@ -289,9 +290,10 @@ def results_slides(d, x, why_main, why_quality):
                  s["relational"]["graph"]["exact_match"]],
         "Classic RAG": [s["experts"]["baseline_p5"], s["single_hop"]["vector"]["hit_rate"], s["relational"]["vector"]["hit_rate"],
                         s["relational"]["vector"]["exact_match"]]}, y_max=1.1, why=why_main)
-    d.chart("Answer quality and latency (single-hop)", ["Correctness (1-5)", "Faithfulness (1-5)", "Latency (s)"], {
-        "CRAG": [s["single_hop"]["graph"]["correctness"], s["single_hop"]["graph"]["faithfulness"], s["single_hop"]["graph"]["latency_mean_s"]],
-        "Classic RAG": [s["single_hop"]["vector"]["correctness"], s["single_hop"]["vector"]["faithfulness"], s["single_hop"]["vector"]["latency_mean_s"]]},
+    v1 = x["v1"]["single_hop"]  # latency from the unthrottled run 1 (run 2 was paced to respect the API rate limit)
+    d.chart("Answer quality and latency (single-hop)", ["Correctness (1-5)", "Faithfulness (1-5)", "Latency (s, run 1)"], {
+        "CRAG": [s["single_hop"]["graph"]["correctness"], s["single_hop"]["graph"]["faithfulness"], v1["graph"]["latency_mean_s"]],
+        "Classic RAG": [s["single_hop"]["vector"]["correctness"], s["single_hop"]["vector"]["faithfulness"], v1["vector"]["latency_mean_s"]]},
         why=why_quality)
 
 

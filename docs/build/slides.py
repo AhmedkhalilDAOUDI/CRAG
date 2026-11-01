@@ -15,6 +15,7 @@ SERIF, SANS = "Georgia", "Arial"
 HERE = Path(__file__).resolve().parent
 LOGO = HERE / "ehtp_logo.png"
 W, H = Inches(13.333), Inches(7.5)
+NOTES = True  # Keynote crashes importing python-pptx notes slides; PDF exports are built with NOTES = False
 
 
 class Deck:
@@ -30,7 +31,7 @@ class Deck:
         s.background.fill.solid()
         s.background.fill.fore_color.rgb = PAPER
         self.n += 1
-        if notes:
+        if notes and NOTES:
             s.notes_slide.notes_text_frame.text = notes
         return s
 

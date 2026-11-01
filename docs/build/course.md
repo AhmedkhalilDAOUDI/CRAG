@@ -62,7 +62,7 @@ A **library** is code written by others that you reuse: NumPy for numbers, FastA
 
 Some settings must not be written in the code: passwords and **API keys** (secret strings that identify you to a paid service). They are stored in **environment variables**, values the operating system gives to a program when it starts. Locally, CRAG reads them from a file named `.env`, which is excluded from Git so it is never published.
 
-<div class="box">
+<div class="box" markdown="1">
 
 **In CRAG.** `crag/config.py` reads every setting (model names, chunk size, Neo4j password, API key) from environment variables with safe defaults. The same code therefore runs on your laptop, in Docker and on Vercel.
 
@@ -98,7 +98,7 @@ The response contains the model's reply in `choices[0].message.content`.
 
 Services limit how many requests you may send per minute; beyond that they answer **429**. A robust client waits and retries, doubling the wait each time (1, 2, 4, 8 seconds): this is **exponential back-off**.
 
-<div class="box">
+<div class="box" markdown="1">
 
 **In CRAG.** `crag/llm.py` sends every model request through one function, `_post`, that retries on 429 and 5xx errors with exponential back-off.
 
@@ -215,7 +215,7 @@ Questions are short and passages long, so modern embedding models encode them sl
 
 Comparing a question with every vector is fine for thousands of passages, slow for millions. An **HNSW** index (Hierarchical Navigable Small World) builds layers of graphs over the vectors: a sparse top layer with long links and denser lower layers. Search starts at the top, jumps greedily toward the query, and goes down layer by layer, like finding a street by going from country to city to neighbourhood. Neo4j provides HNSW **vector indexes**.
 
-<div class="box">
+<div class="box" markdown="1">
 
 **In CRAG.** `crag/llm.py:embed` calls `nvidia/nemotron-3.5-embed-1b` and normalises the vectors. `MemoryStore.search_chunks` ranks passages with one NumPy multiplication; `Neo4jStore.search_chunks` calls `db.index.vector.queryNodes`.
 
@@ -283,7 +283,7 @@ RETURN p.name, r.type
 
 `MATCH` describes a pattern; `(p:Entity)` is a node with label Entity; `-[r:RELATED]->` is an edge; `RETURN` lists the output. `MERGE` creates something only if it does not already exist, which makes repeated imports safe.
 
-<div class="box">
+<div class="box" markdown="1">
 
 **In CRAG.** The graph model: `(:Document)-[:HAS_CHUNK]->(:Chunk)-[:MENTIONS]->(:Entity)-[:RELATED {type}]->(:Entity)` and `(:Entity {type:'Person'})-[:AUTHORED]->(:Document)`. See the data-model figure in the report and `crag/store.py`.
 
@@ -329,9 +329,9 @@ Each chunk and each entity is embedded, then everything is written to the store:
 
 CRAG decides automatically: if a PDF yields fewer than 20 characters per page on average from its text layer, it is treated as scanned and OCR'd. Image files are always OCR'd.
 
-<div class="box">
+<div class="box" markdown="1">
 
-**In CRAG.** `crag/ingest.py:load_text`. Two scanned test documents were read correctly (about 3,900 characters each).
+**In CRAG.** `crag/ingest.py:load_text`. Two scanned test documents were read correctly (about 3,900 and 5,300 characters).
 
 </div>
 

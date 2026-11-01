@@ -52,6 +52,7 @@ blockquote p { margin: 0; }
 .toc li.l2 { padding-left: 16pt; } .toc li.l3 { padding-left: 32pt; font-size: 9.6pt; color: #3a3a37; }
 .toc .dots { flex: 1; border-bottom: 1px dotted #9a988f; margin-bottom: 4pt; }
 .front h1 { break-before: page; }
+.mk { font-size: 1px; color: #FFFFFF; letter-spacing: 0; }
 .eq { text-align: center; font-style: italic; margin: 6pt 0 10pt; }
 """
 
@@ -68,7 +69,7 @@ def inline_images(html: str, base: Path) -> str:
     return re.sub(r'src="(?!data:|https?:)([^"]+)"', rep, html)
 
 
-def build_html(md_text: str, cover: str, pages: dict | None) -> tuple[str, list]:
+def build_html(md_text: str, cover: str, pages: dict | None, markers: bool = True, kicker: str = "Chapter") -> tuple[str, list]:
     body = markdown.markdown(md_text, extensions=["tables", "fenced_code", "attr_list", "md_in_html"])
     heads, chap = [], 0
 
@@ -80,10 +81,11 @@ def build_html(md_text: str, cover: str, pages: dict | None) -> tuple[str, list]
         if level == 1 and not plain.startswith(("Acknowledg", "Abstract", "Résumé", "Table of", "List of", "Abbrev",
                                                 "General", "References", "Appendix", "Preface", "How to")):
             chap += 1
-            text = f'<span class="num">Chapter {chap}</span>{text}'
+            text = f'<span class="num">{kicker} {chap}</span>{text}'
         if level <= 3:
             heads.append((level, plain, hid))
-        return f'<h{level} id="{hid}">{text}</h{level}>'
+        mk = f'<span class="mk">§{hid}§</span>' if markers else ""  # 1px marker: removing it cannot reflow the page
+        return f'<h{level} id="{hid}">{text}{mk}</h{level}>'
 
     body = re.sub(r"<h([1-3])>(.*?)</h\1>", number, body)
     toc_items = []
@@ -104,27 +106,19 @@ def to_pdf(html: str, out: Path):
                     f"--print-to-pdf={out}", f"file://{f.name}"], check=True, capture_output=True)
 
 
-def find_pages(pdf: Path, heads: list, skip_pages: int) -> dict:
-    texts = [re.sub(r"\s+", " ", p.extract_text() or "") for p in PdfReader(pdf).pages]
-    pages, start = {}, skip_pages
-    for level, plain, hid in heads:
-        key = re.sub(r"\s+", " ", plain).strip()[:40]
-        for i in range(start, len(texts)):
-            if key in texts[i]:
-                pages[hid] = i + 1
-                start = i  # headings appear in order
-                break
-    return pages
+def find_pages(pdf: Path, heads: list) -> dict:
+    """Locate each heading by its invisible marker, which only the body heading carries (never the TOC)."""
+    texts = [p.extract_text() or "" for p in PdfReader(pdf).pages]
+    return {hid: i + 1 for _, _, hid in heads for i, t in enumerate(texts) if f"§{hid}§" in t}
 
 
-def build(md_path: Path, out: Path, cover_html: str = ""):
+def build(md_path: Path, out: Path, cover_html: str = "", kicker: str = "Chapter"):
     md_text = md_path.read_text()
-    html, heads = build_html(md_text, cover_html, None)
+    html, heads = build_html(md_text, cover_html, None, kicker=kicker)
     html = inline_images(html, md_path.parent)
     to_pdf(html, out)
-    toc_page = next((i for i, t in enumerate(PdfReader(out).pages) if "Table of contents" in (t.extract_text() or "")), 0)
-    pages = find_pages(out, heads, toc_page + 1)
-    html, _ = build_html(md_text, cover_html, pages)
+    pages = find_pages(out, heads)
+    html, _ = build_html(md_text, cover_html, pages, markers=False, kicker=kicker)
     to_pdf(inline_images(html, md_path.parent), out)
     print(f"{out.name}: {len(PdfReader(out).pages)} pages, {len(pages)}/{len(heads)} headings located")
 
