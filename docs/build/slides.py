@@ -15,7 +15,7 @@ SERIF, SANS = "Georgia", "Arial"
 HERE = Path(__file__).resolve().parent
 LOGO = HERE / "ehtp_logo.png"
 W, H = Inches(13.333), Inches(7.5)
-NOTES = True  # Keynote crashes importing python-pptx notes slides; PDF exports are built with NOTES = False
+NOTES = False  # python-pptx notes slides make Keynote reject the file ("invalid format"), so decks carry none
 
 
 class Deck:
