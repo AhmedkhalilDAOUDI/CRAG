@@ -1,0 +1,5 @@
+-r requirements.txt
+-r requirements-ocr.txt
+pytest==9.2.0
+kagglehub
+matplotlib

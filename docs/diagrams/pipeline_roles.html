@@ -1,0 +1,43 @@
+<!doctype html><html><head><meta charset="utf-8"><title>CRAG pipeline roles</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#FAF9F5;--paper2:#F0EEE6;--ink:#191917;--ink2:#5E5D59;--line:#CFCDC2;--clay:#C2643F;--olive:#6A7A4F;--blue:#3F5F7A}
+*{box-sizing:border-box}body{margin:0;width:1800px;height:1250px;background:var(--paper);color:var(--ink);font:15px/1.35 "Public Sans",sans-serif;padding:44px 52px}
+h1{font:400 42px/1.1 Newsreader,serif;margin:0 0 6px}.sub{color:var(--ink2);font-size:17px;margin:0 0 20px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font:600 13px "Public Sans";color:var(--ink2);padding:8px 10px;border-bottom:2px solid var(--ink)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.n{font:400 22px Newsreader,serif;color:var(--clay);width:44px}
+td.s{font:500 17px Newsreader,serif;width:250px}
+td.w{width:92px;text-align:center}
+.dot{display:inline-block;width:18px;height:18px;border-radius:50%}
+.you .dot,.dot.you{background:var(--blue)}.dot.tool{background:var(--olive)}.dot.model{background:var(--clay)}
+tr.sec td{background:var(--paper2);font:500 19px Newsreader,serif;padding:10px}
+td.u{color:var(--ink)}td.u code{font:13px Menlo,monospace;background:var(--paper2);padding:1px 4px;border-radius:4px}
+</style></head><body>
+<h1>Who does each step, and with what</h1>
+<p class="sub">Blue = you (a person), green = a tool (deterministic code or library), clay = the model (an NVIDIA NIM call).</p>
+<table>
+<tr><th>#</th><th>Step</th><th class="w">You</th><th class="w">Tool</th><th class="w">Model</th><th>What we actually used</th></tr>
+<tr class="sec"><td colspan="6">Ingestion (offline)</td></tr>
+<tr><td class="n">1</td><td class="s">Collect documents</td><td class="w"><i class="dot you"></i></td><td class="w"></td><td class="w"></td><td class="u">Files in a folder → <code>scripts/ingest.py</code>, or upload → <code>POST /api/ingest</code> (admin token)</td></tr>
+<tr><td class="n">2</td><td class="s">Read text / OCR</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">pypdf for the text layer; if a page has under 20 characters, pypdfium2 renders it and Tesseract 5 reads it</td></tr>
+<tr><td class="n">3</td><td class="s">Clean and chunk</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">Regex cleanup; sentence packing, 1,200 characters per chunk, 200 overlap (<code>crag/ingest.py</code>)</td></tr>
+<tr><td class="n">4</td><td class="s">Extract entities and relations</td><td class="w"></td><td class="w"></td><td class="w"><i class="dot model"></i></td><td class="u"><code>nvidia/nemotron-3.5-lightning-30b-a3b</code>, temperature 0, thinking off, JSON schema in the prompt, 4 parallel calls</td></tr>
+<tr><td class="n">5</td><td class="s">Resolve entities</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">Lower-case, punctuation-free name keys; placeholder stoplist; relations kept only if both ends exist</td></tr>
+<tr><td class="n">6</td><td class="s">Embed chunks and entities</td><td class="w"></td><td class="w"></td><td class="w"><i class="dot model"></i></td><td class="u"><code>nvidia/nemotron-3.5-embed-1b</code>, 2,048 dimensions, L2-normalised, input_type passage / query</td></tr>
+<tr><td class="n">7</td><td class="s">Store graph and vectors</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">Neo4j 5.26 with cosine HNSW indexes, or NetworkX + NumPy snapshot (<code>graph.json</code>, <code>vectors.npz</code>)</td></tr>
+<tr class="sec"><td colspan="6">Query (online, LangGraph)</td></tr>
+<tr><td class="n">8</td><td class="s">Ask a question</td><td class="w"><i class="dot you"></i></td><td class="w"></td><td class="w"></td><td class="u">Web UI (HTML/CSS/JS) or <code>POST /api/ask</code>; FastAPI validates and rate-limits (20/min/IP)</td></tr>
+<tr><td class="n">9</td><td class="s">Analyze intent</td><td class="w"></td><td class="w"></td><td class="w"><i class="dot model"></i></td><td class="u">Nemotron returns <code>{"intent": qa|experts|recommend, "entities": [...]}</code></td></tr>
+<tr><td class="n">10</td><td class="s">Vector retrieval</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"><i class="dot model"></i></td><td class="u">Model embeds the query; tool ranks passages by cosine (NumPy matmul, or Neo4j <code>db.index.vector.queryNodes</code>)</td></tr>
+<tr><td class="n">11</td><td class="s">Entity linking + graph expansion</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">Exact name keys + nearest entity vectors (cosine ≥ 0.35); 2-hop BFS (NetworkX) or Cypher <code>shortestPath</code></td></tr>
+<tr><td class="n">12</td><td class="s">Fuse rankings</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">Reciprocal Rank Fusion (k = 60); top 3 semantic passages always kept; 6 passages + up to 25 graph facts</td></tr>
+<tr><td class="n">13</td><td class="s">Grade evidence (corrective loop)</td><td class="w"></td><td class="w"></td><td class="w"><i class="dot model"></i></td><td class="u">Nemotron judges sufficiency; LangGraph conditional edge loops back once with a rewritten query</td></tr>
+<tr><td class="n">14</td><td class="s">Rank experts / documents</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">Experts: 0.4 graph evidence (relations to the question's entities) + 0.3 coverage + 0.3 semantic. Documents: 0.7 cosine + 0.3 Jaccard</td></tr>
+<tr><td class="n">15</td><td class="s">Generate cited answer</td><td class="w"></td><td class="w"></td><td class="w"><i class="dot model"></i></td><td class="u">Nemotron, grounded prompt; each passage labelled with its document and subject; must cite [S#] and [F#]</td></tr>
+<tr><td class="n">16</td><td class="s">Explain and visualise</td><td class="w"></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">Regex pulls cited markers → reasoning path; Cytoscape.js draws it in clay</td></tr>
+<tr class="sec"><td colspan="6">Operations</td></tr>
+<tr><td class="n">17</td><td class="s">Evaluate</td><td class="w"><i class="dot you"></i></td><td class="w"><i class="dot tool"></i></td><td class="w"><i class="dot model"></i></td><td class="u">You run <code>scripts/evaluate.py</code>; tool computes P@5, hit rate, exact match; model acts as judge for answer quality</td></tr>
+<tr><td class="n">18</td><td class="s">Deploy</td><td class="w"><i class="dot you"></i></td><td class="w"><i class="dot tool"></i></td><td class="w"></td><td class="u">Docker Compose (Neo4j + API) for production; Vercel serverless for the public read-only demo; GitHub for code</td></tr>
+</table></body></html>

@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8"><title>CRAG data model</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{margin:0;width:1400px;height:700px;background:#fff;font:15px "Public Sans",sans-serif;color:#191917}
+text{font-family:"Public Sans",sans-serif}.t{font:500 22px Newsreader,serif}.p{font-size:13px;fill:#5E5D59}.r{font:600 13px "Public Sans";fill:#C2643F}</style></head><body>
+<svg width="1400" height="700" viewBox="0 0 1400 700">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0L10,5L0,10z" fill="#191917"/></marker></defs>
+<!-- Document -->
+<rect x="60" y="80" width="290" height="190" rx="16" fill="#F0EEE6" stroke="#191917" stroke-width="2"/>
+<text x="80" y="118" class="t">:Document</text>
+<text x="80" y="150" class="p">id (unique), title, source</text><text x="80" y="172" class="p">author, ocr, chars</text>
+<!-- Chunk -->
+<rect x="560" y="80" width="290" height="190" rx="16" fill="#F0EEE6" stroke="#191917" stroke-width="2"/>
+<text x="580" y="118" class="t">:Chunk</text>
+<text x="580" y="150" class="p">id (unique), doc_id, idx</text><text x="580" y="172" class="p">text</text><text x="580" y="194" class="p">embedding [2048] · vector index</text>
+<!-- Entity -->
+<rect x="1060" y="80" width="290" height="210" rx="16" fill="#F3E3DA" stroke="#C2643F" stroke-width="2"/>
+<text x="1080" y="118" class="t">:Entity</text>
+<text x="1080" y="150" class="p">key (unique), name</text><text x="1080" y="172" class="p">type: Person | Skill | Technology |</text><text x="1080" y="192" class="p">Organization | Role | Project | ...</text><text x="1080" y="214" class="p">description</text><text x="1080" y="236" class="p">embedding [2048] · vector index</text>
+<!-- edges -->
+<line x1="350" y1="160" x2="556" y2="160" stroke="#191917" stroke-width="2" marker-end="url(#a)"/><text x="400" y="148" class="r">HAS_CHUNK</text>
+<line x1="850" y1="160" x2="1056" y2="160" stroke="#191917" stroke-width="2" marker-end="url(#a)"/><text x="910" y="148" class="r">MENTIONS</text>
+<!-- self loop RELATED -->
+<path d="M1150,290 C1100,430 1320,430 1270,294" fill="none" stroke="#191917" stroke-width="2" marker-end="url(#a)"/>
+<text x="1110" y="455" class="r">RELATED {type, description, doc_id}</text>
+<text x="1110" y="478" class="p">e.g. type = HAS_SKILL, WORKED_AT, USES</text>
+<!-- AUTHORED back to document -->
+<path d="M1060,250 C900,560 400,560 220,274" fill="none" stroke="#191917" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#a)"/>
+<text x="560" y="505" class="r">AUTHORED (Person → Document)</text>
+<text x="60" y="640" class="p">One generic RELATED type with the predicate as a property keeps Cypher simple and accepts the open vocabulary produced by the LLM.</text>
+</svg></body></html>

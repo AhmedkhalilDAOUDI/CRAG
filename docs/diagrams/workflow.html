@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>CRAG workflow</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#FAF9F5;--paper2:#F0EEE6;--ink:#191917;--ink2:#5E5D59;--line:#CFCDC2;--clay:#C2643F;--olive:#6A7A4F;--blue:#3F5F7A}
+*{box-sizing:border-box}body{margin:0;width:1800px;height:1040px;background:var(--paper);color:var(--ink);font:15px/1.4 "Public Sans",sans-serif;padding:48px 56px}
+h1{font:400 44px/1.1 Newsreader,serif;margin:0 0 6px}.sub{color:var(--ink2);font-size:18px;margin:0 0 30px}
+.lane{border:1px solid var(--line);border-radius:18px;padding:22px 24px 26px;margin-bottom:22px;background:#fff8}
+.lane h2{font:500 22px Newsreader,serif;margin:0 0 4px}.lane .when{color:var(--ink2);margin:0 0 16px}
+.row{display:flex;align-items:stretch;gap:0}
+.box{flex:1;background:var(--paper2);border:1px solid var(--line);border-radius:12px;padding:12px 12px 10px;min-height:150px;display:flex;flex-direction:column}
+.box b{display:block;font:500 17px Newsreader,serif;margin-bottom:4px}
+.box .t{font-size:13px;color:var(--ink2);margin-bottom:10px}
+.who{margin-top:auto;align-self:flex-start;font:600 11px "Public Sans";padding:2px 7px;border-radius:5px;color:#fff}
+.you{background:var(--blue)}.tool{background:var(--olive)}.model{background:var(--clay)}
+.arr{width:34px;display:flex;align-items:center;justify-content:center;color:var(--ink2);font-size:22px}
+.store{display:flex;gap:22px;margin-bottom:22px}
+.db{flex:1;border:2px solid var(--ink);border-radius:18px;padding:16px 22px;background:var(--paper)}
+.db b{font:500 20px Newsreader,serif}.db p{margin:6px 0 0;color:var(--ink2)}
+.loop{border:2px dashed var(--clay)}
+.legend{display:flex;gap:18px;color:var(--ink2);font-size:14px;margin-top:4px}
+.legend span{display:flex;align-items:center;gap:6px}
+.down{text-align:center;color:var(--ink2);font-size:14px;margin:-10px 0 8px}
+</style></head><body>
+<h1>CRAG workflow</h1>
+<p class="sub">Two pipelines share one knowledge store: ingestion builds it once, the query workflow reads it for every question.</p>
+
+<div class="lane">
+  <h2>A. Ingestion pipeline</h2><p class="when">Offline, run when documents are added (scripts/ingest.py or POST /api/ingest)</p>
+  <div class="row">
+    <div class="box"><b>1. Collect</b><span class="t">PDF, TXT, MD, scanned images dropped in a folder or uploaded</span><span class="who you">YOU</span></div><div class="arr">→</div>
+    <div class="box"><b>2. Read / OCR</b><span class="t">pypdf text layer; if empty, pypdfium2 renders pages and Tesseract reads them</span><span class="who tool">TOOL</span></div><div class="arr">→</div>
+    <div class="box"><b>3. Clean + chunk</b><span class="t">Whitespace cleanup, sentence packing into 1,200-char chunks with 200-char overlap</span><span class="who tool">TOOL</span></div><div class="arr">→</div>
+    <div class="box"><b>4. Extract</b><span class="t">Entities (10 types) and relations as JSON, one call per chunk; Nemotron 3.5 Lightning</span><span class="who model">MODEL</span></div><div class="arr">→</div>
+    <div class="box"><b>5. Resolve</b><span class="t">Name normalisation merges duplicates; placeholders removed</span><span class="who tool">TOOL</span></div><div class="arr">→</div>
+    <div class="box"><b>6. Embed</b><span class="t">Chunks and entities → 2,048-d vectors; nemotron-3.5-embed-1b</span><span class="who model">MODEL</span></div><div class="arr">→</div>
+    <div class="box"><b>7. Store</b><span class="t">Nodes, edges, vectors written to the knowledge store</span><span class="who tool">TOOL</span></div>
+  </div>
+</div>
+<p class="down">↓ writes &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; reads ↑</p>
+<div class="store">
+  <div class="db"><b>Neo4j 5 (production)</b><p>(:Document)-[:HAS_CHUNK]→(:Chunk)-[:MENTIONS]→(:Entity)-[:RELATED]→(:Entity), (:Person)-[:AUTHORED]→(:Document). HNSW vector indexes on Chunk and Entity embeddings. Queried with Cypher.</p></div>
+  <div class="db"><b>Memory snapshot (serverless)</b><p>Same graph in NetworkX plus a NumPy embedding matrix, saved as graph.json + vectors.npz. Used by the Vercel deployment and the tests.</p></div>
+</div>
+
+<div class="lane">
+  <h2>B. Query workflow (LangGraph state machine)</h2><p class="when">Online, per question (POST /api/ask), about 3 to 8 seconds</p>
+  <div class="row">
+    <div class="box"><b>8. Ask</b><span class="t">Question typed in the web UI or sent to the API</span><span class="who you">YOU</span></div><div class="arr">→</div>
+    <div class="box"><b>9. Analyze</b><span class="t">Intent (QA, experts, recommend) and key entities, as JSON</span><span class="who model">MODEL</span></div><div class="arr">→</div>
+    <div class="box"><b>10. Retrieve</b><span class="t">Query embedding → top passages by cosine; entity linking</span><span class="who model">MODEL</span></div><div class="arr">→</div>
+    <div class="box"><b>11. Expand + fuse</b><span class="t">2-hop graph walk → facts; RRF fusion, top 3 semantic passages always kept</span><span class="who tool">TOOL</span></div><div class="arr">→</div>
+    <div class="box loop"><b>12. Grade</b><span class="t">Is the evidence sufficient? If not, rewrite the query and retrieve again (max once)</span><span class="who model">MODEL</span></div><div class="arr">→</div>
+    <div class="box"><b>13. Rank</b><span class="t">Experts: 0.4 graph evidence + 0.3 coverage + 0.3 semantic. Docs: 0.7 cosine + 0.3 Jaccard</span><span class="who tool">TOOL</span></div><div class="arr">→</div>
+    <div class="box"><b>14. Generate</b><span class="t">Answer citing passages [S] and graph facts [F]</span><span class="who model">MODEL</span></div><div class="arr">→</div>
+    <div class="box"><b>15. Explain + show</b><span class="t">Cited reasoning path extracted and drawn with Cytoscape.js</span><span class="who tool">TOOL</span></div>
+  </div>
+</div>
+<div class="legend"><span><i class="who you" style="position:static">YOU</i> a person acts</span><span><i class="who tool" style="position:static">TOOL</i> deterministic code or library</span><span><i class="who model" style="position:static">MODEL</i> NVIDIA NIM model call</span><span>Dashed: corrective loop</span><span>Serving: FastAPI · Docker Compose (Neo4j + API) · Vercel (snapshot)</span></div>
+</body></html>

@@ -1,0 +1,52 @@
+<!doctype html><html><head><meta charset="utf-8"><title>CRAG keywords</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#FAF9F5;--paper2:#F0EEE6;--ink:#191917;--ink2:#5E5D59;--line:#CFCDC2;--clay:#C2643F;--olive:#6A7A4F;--blue:#3F5F7A}
+*{box-sizing:border-box}body{margin:0;width:1800px;height:1000px;background:var(--paper);color:var(--ink);font:14px/1.42 "Public Sans",sans-serif;padding:44px 52px}
+h1{font:400 42px/1.1 Newsreader,serif;margin:0 0 6px}.sub{color:var(--ink2);font-size:17px;margin:0 0 22px}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.k{background:var(--paper2);border:1px solid var(--line);border-left:4px solid var(--g);border-radius:10px;padding:10px 12px}
+.k b{font:500 17px Newsreader,serif;display:block;margin-bottom:3px}
+.ai{--g:var(--clay)}.data{--g:var(--olive)}.sys{--g:var(--blue)}.eval{--g:var(--ink)}
+.legend{display:flex;gap:22px;margin:0 0 18px;color:var(--ink2)}.legend i{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+</style></head><body>
+<h1>Keywords used in the CRAG workflow</h1>
+<p class="sub">Every term that appears in the workflow diagram, in plain words.</p>
+<div class="legend"><span><i style="background:#C2643F"></i>AI and models</span><span><i style="background:#6A7A4F"></i>Data and knowledge</span><span><i style="background:#3F5F7A"></i>Software and infrastructure</span><span><i style="background:#191917"></i>Evaluation</span></div>
+<div class="grid">
+<div class="k ai"><b>LLM</b>Large Language Model: a neural network trained on huge text corpora to predict the next token; here it extracts, classifies, grades and writes.</div>
+<div class="k ai"><b>RAG</b>Retrieval-Augmented Generation: fetch relevant text first, then let the LLM answer using only that text.</div>
+<div class="k ai"><b>GraphRAG</b>RAG that also retrieves from a knowledge graph, so answers can follow relations between facts.</div>
+<div class="k ai"><b>Corrective loop</b>The model grades its evidence and, if weak, rewrites the query and retrieves again (after Yan et al., 2024).</div>
+<div class="k ai"><b>Embedding</b>A list of numbers (here 2,048) representing meaning; similar texts get nearby vectors.</div>
+<div class="k ai"><b>Prompt</b>The instructions and context sent to the LLM for one call.</div>
+<div class="k ai"><b>Structured extraction</b>Prompting the LLM to return entities and relations as strict JSON that code can parse.</div>
+<div class="k ai"><b>Intent classification</b>Deciding what kind of question it is: lookup, expert search or recommendation.</div>
+<div class="k ai"><b>Hallucination</b>A fluent but unsupported claim; citations and grounding prompts reduce it.</div>
+<div class="k ai"><b>NVIDIA NIM</b>NVIDIA's hosted inference API (OpenAI-compatible) that serves the Nemotron chat and embedding models.</div>
+<div class="k data"><b>Knowledge graph</b>Data stored as nodes (things) connected by typed edges (relations).</div>
+<div class="k data"><b>Entity</b>A node: a person, skill, technology, organisation, project, role, concept, location...</div>
+<div class="k data"><b>Relation / triple</b>A typed edge, written (subject, PREDICATE, object), e.g. (Employee 12, HAS_SKILL, SQL).</div>
+<div class="k data"><b>Chunk</b>A ~1,200-character piece of a document; the unit that is embedded and retrieved.</div>
+<div class="k data"><b>Overlap</b>The 200 characters repeated between consecutive chunks so no sentence loses its context.</div>
+<div class="k data"><b>OCR</b>Optical Character Recognition: turns pixels of a scanned page into text (Tesseract).</div>
+<div class="k data"><b>Entity resolution</b>Merging different spellings of the same thing into one node.</div>
+<div class="k data"><b>Entity linking</b>Mapping words in a question to existing graph nodes.</div>
+<div class="k data"><b>Multi-hop</b>Following several edges in a row (A→B→C) to reach facts not stated together.</div>
+<div class="k data"><b>Cosine similarity</b>Angle-based closeness of two vectors, from -1 to 1; used to rank passages.</div>
+<div class="k sys"><b>Neo4j</b>A graph database; stores nodes, relations and vector indexes.</div>
+<div class="k sys"><b>Cypher</b>Neo4j's query language, e.g. MATCH (p)-[:HAS_SKILL]->(s) RETURN p.</div>
+<div class="k sys"><b>Vector index (HNSW)</b>A layered proximity graph that finds nearest vectors without scanning them all.</div>
+<div class="k sys"><b>LangGraph</b>A library that runs an LLM workflow as a graph of steps sharing one state, with conditional edges.</div>
+<div class="k sys"><b>State machine</b>A fixed set of steps and transition rules; here analyze → retrieve → grade → ... → explain.</div>
+<div class="k sys"><b>RRF</b>Reciprocal Rank Fusion: merges ranked lists by summing 1/(60 + rank) for each item.</div>
+<div class="k sys"><b>FastAPI</b>The Python web framework that exposes /api/ask, /api/experts, /api/graph...</div>
+<div class="k sys"><b>Docker / Compose</b>Packages the app and Neo4j into containers that run the same everywhere.</div>
+<div class="k sys"><b>Serverless (Vercel)</b>Hosting where code runs per request; CRAG serves a read-only snapshot there.</div>
+<div class="k sys"><b>Cytoscape.js</b>The JavaScript library that draws the graph in the browser.</div>
+<div class="k eval"><b>Precision@5</b>Of the top 5 experts returned, the fraction that are truly from the queried domain.</div>
+<div class="k eval"><b>Hit rate</b>How often the gold document appears among the retrieved passages.</div>
+<div class="k eval"><b>Exact match</b>Whether the answer names the correct employee identifier.</div>
+<div class="k eval"><b>LLM-as-a-judge</b>A model scores correctness and faithfulness from 1 to 5 against a reference.</div>
+<div class="k eval"><b>Faithfulness</b>Whether every claim in the answer is supported by the retrieved context.</div>
+</div></body></html>

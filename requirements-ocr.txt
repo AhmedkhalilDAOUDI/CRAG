@@ -1,0 +1,4 @@
+# Scanned-document support (also needs the tesseract binary: apt install tesseract-ocr / brew install tesseract)
+pillow==13.0.0
+pypdfium2==5.14.0
+pytesseract==0.3.13

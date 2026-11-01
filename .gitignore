@@ -1,0 +1,18 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+data/raw/
+data/kaggle/
+.vercel
+.pytest_cache/
+.DS_Store
+data/testdocs/
+.claude/
+# Test-corpus derived data stays local (used only for validation)
+data/index/*
+!data/index/.gitkeep
+data/eval/
+data/*.log
+docs/build/fig/ui_full.png
+docs/build/fig/ui_page.png

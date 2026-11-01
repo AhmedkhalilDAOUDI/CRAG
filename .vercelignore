@@ -1,0 +1,10 @@
+.venv
+data/testdocs
+data/ingest.log
+tests
+docs
+scripts
+*.md
+data/*.log
+data/eval
+.claude

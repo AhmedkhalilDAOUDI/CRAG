@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRAG</title>
+<meta name="description" content="Ask questions across your company's documents and see the knowledge graph behind every answer.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='8' cy='22' r='4' fill='%23C2643F'/%3E%3Ccircle cx='24' cy='9' r='4' fill='%23191917'/%3E%3Ccircle cx='24' cy='24' r='3' fill='%23191917'/%3E%3Cpath d='M8 22L24 9M24 9V24' stroke='%23191917' stroke-width='2'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="brand" href="#ask" aria-label="CRAG home">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M8 22L24 9M24 9V24" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="22" r="4" fill="var(--clay)"/><circle cx="24" cy="9" r="4" fill="currentColor"/><circle cx="24" cy="24" r="3" fill="currentColor"/></svg>
+    CRAG
+  </a>
+  <nav aria-label="Main">
+    <a href="#ask">Ask</a>
+    <a href="#explore">Knowledge graph</a>
+    <a href="#documents">Documents</a>
+    <a href="#how">How it works</a>
+  </nav>
+</header>
+
+<main id="main">
+  <section id="ask" class="hero">
+    <h1>Ask what your company already knows.</h1>
+    <p class="lede">CRAG reads your documents, links the people, skills and projects inside them into a knowledge graph, and answers with the passages and relations it used.</p>
+
+    <form id="ask-form" class="ask" autocomplete="off">
+      <label for="q" class="sr">Your question</label>
+      <textarea id="q" rows="2" maxlength="2000" placeholder="Who has experience with SQL Server and data migration?" required></textarea>
+      <div class="ask-row">
+        <fieldset class="mode">
+          <legend class="sr">Retrieval mode</legend>
+          <label><input type="radio" name="mode" value="graph" checked> Graph-augmented</label>
+          <label><input type="radio" name="mode" value="vector"> Passages only</label>
+        </fieldset>
+        <button type="submit" id="ask-btn">Ask CRAG</button>
+      </div>
+      <div class="suggest" id="suggest" aria-label="Example questions">
+        <button type="button">Who are the experts in payroll and benefits administration?</button>
+        <button type="button">Which employees know both AutoCAD and project scheduling?</button>
+        <button type="button">Recommend profiles similar to a network administrator.</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="result" class="result" hidden aria-live="polite">
+    <div class="answer-col">
+      <div class="meta" id="meta"></div>
+      <article class="answer" id="answer"></article>
+      <div id="experts"></div>
+      <div id="recs"></div>
+      <details class="trace" id="trace-wrap">
+        <summary>Workflow steps</summary>
+        <ol id="trace"></ol>
+      </details>
+    </div>
+    <aside class="evidence-col">
+      <h2 class="h3">Reasoning graph</h2>
+      <p class="hint">Entities linked to your question are ringed; relations the answer cited are drawn in clay.</p>
+      <div id="qgraph" class="graph small" role="img" aria-label="Knowledge graph neighbourhood used for this answer"></div>
+      <h2 class="h3">Sources</h2>
+      <ol id="sources" class="sources"></ol>
+    </aside>
+  </section>
+
+  <section id="explore" class="band">
+    <div class="band-head">
+      <h2>The knowledge graph</h2>
+      <p id="stats" class="stats"></p>
+    </div>
+    <div id="graph" class="graph large" role="img" aria-label="Most connected entities of the knowledge graph"></div>
+    <ul class="legend" id="legend"></ul>
+  </section>
+
+  <section id="documents" class="band">
+    <div class="band-head">
+      <h2>Documents</h2>
+      <p class="stats">Choose a document to find the most similar ones by meaning and shared entities.</p>
+    </div>
+    <div class="docs">
+      <ul id="doclist" class="doclist"></ul>
+      <div id="similar" class="similar"><p class="empty">No document selected.</p></div>
+    </div>
+  </section>
+
+  <section id="how" class="band how">
+    <h2>How an answer is made</h2>
+    <ol class="steps">
+      <li><h3>Understand</h3><p>The language model classifies the question as a lookup, an expert search or a recommendation, and names its key entities.</p></li>
+      <li><h3>Retrieve</h3><p>Passages are found by meaning with embeddings, and entities are linked to the graph.</p></li>
+      <li><h3>Expand</h3><p>The graph is walked two relations deep to collect facts that plain text search misses.</p></li>
+      <li><h3>Check</h3><p>The model grades the evidence; if it is thin, the query is rewritten and retrieval runs again.</p></li>
+      <li><h3>Answer</h3><p>The answer cites each passage [S] and graph fact [F] it relies on, and the cited path is shown.</p></li>
+    </ol>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>CRAG, a final-year project (PFE) by Daoudi Ahmed Khalil, MDSE, Ecole Hassania des Travaux Publics, 2025/2026. Supervised by Dr. Abdelali El Bouchti.</p>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
