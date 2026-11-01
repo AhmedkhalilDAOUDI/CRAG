@@ -218,7 +218,7 @@ Required by the brief: LLM, RAG, LangGraph, GraphRAG, OCR, Neo4j, Docker.
 2.8 Front-end: HTML, CSS, JavaScript, Cytoscape.js
   No framework is needed for one page: plain HTML/CSS/JS served by FastAPI.
   Cytoscape.js draws graphs (nodes, edges, force-directed layout). The design
-  borrows Anthropic's website language: ivory paper background, slate ink,
+  follows a calm editorial style: ivory paper background, slate ink,
   a clay accent, a serif display typeface (Newsreader) with a clean sans-serif
   (Public Sans). Dark mode follows the operating system setting.
 

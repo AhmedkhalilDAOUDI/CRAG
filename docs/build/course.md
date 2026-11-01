@@ -473,7 +473,7 @@ class AskIn(BaseModel):
 
 ## The web page
 
-The interface is written in **HTML** (structure), **CSS** (appearance) and **JavaScript** (behaviour). JavaScript calls the API with `fetch`, then writes the answer, the sources and the experts into the page. **Cytoscape.js** draws the graph: nodes coloured by type, seeds ringed, cited relations in clay. The design follows Anthropic's website: ivory background, dark ink, one warm accent, a serif display font.
+The interface is written in **HTML** (structure), **CSS** (appearance) and **JavaScript** (behaviour). JavaScript calls the API with `fetch`, then writes the answer, the sources and the experts into the page. **Cytoscape.js** draws the graph: nodes coloured by type, seeds ringed, cited relations in clay. The design follows a calm editorial style: ivory background, dark ink, one warm accent, a serif display font.
 
 ## Self-check
 

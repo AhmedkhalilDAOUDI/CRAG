@@ -8,7 +8,6 @@ data/kaggle/
 .pytest_cache/
 .DS_Store
 data/testdocs/
-.claude/
 # Test-corpus derived data stays local (used only for validation)
 data/index/*
 !data/index/.gitkeep
