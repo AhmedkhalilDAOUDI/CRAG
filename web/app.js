@@ -17,6 +17,7 @@ const drawn = {};
 function showView() {
   const name = ["ask", "graph", "documents"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "ask";
   $$("[data-view]").forEach((v) => { v.hidden = v.dataset.view !== name; });
+  document.body.dataset.view = name;  // the Ask view's top bar sits over the dark hero
   $$("[data-view-link]").forEach((a) => { if (a.dataset.viewLink === name) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   // Cytoscape needs a visible container to lay out, so each view draws on first show.
   if (name === "graph" && !drawn.graph) { drawn.graph = true; loadGraph(); }
