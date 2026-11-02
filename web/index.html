@@ -3,114 +3,143 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CRAG</title>
+<title>CRAG — Enterprise Knowledge</title>
 <meta name="description" content="Ask questions across your company's documents. Every answer shows the exact words that support it.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<meta name="color-scheme" content="dark">
 <link rel="stylesheet" href="/static/styles.css">
-<script type="importmap">{"imports": {"three": "https://unpkg.com/three@0.143.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.143.0/examples/jsm/"}}</script>
-<link rel="modulepreload" href="https://unpkg.com/three@0.143.0/build/three.module.js" crossorigin>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='12' width='26' height='9' fill='%23F6E05E'/%3E%3Cpath d='M7 25L16 7L25 25' fill='none' stroke='%2313233A' stroke-width='3'/%3E%3C/svg%3E">
+<script type="importmap">{"imports": {"three": "https://unpkg.com/three@0.158.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"}}</script>
+<link rel="modulepreload" href="https://unpkg.com/three@0.158.0/build/three.module.js" crossorigin>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a1b17'/%3E%3Ctext x='16' y='23' font-family='Georgia' font-size='20' text-anchor='middle' fill='%23cf7d5c' font-style='italic'%3EC%3C/text%3E%3C/svg%3E">
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="bar">
-  <a class="brand" href="#ask" aria-label="CRAG, ask">CRAG</a>
-  <nav aria-label="Views">
-    <a href="#ask" data-view-link="ask">Ask</a>
-    <a href="#graph" data-view-link="graph">Graph</a>
-    <a href="#documents" data-view-link="documents">Documents</a>
-  </nav>
-</header>
-
-<main id="main">
-  <section id="ask" class="view" data-view="ask">
-    <div class="hero">
-    <canvas id="wave" aria-hidden="true"></canvas>
-    <form id="ask-form" class="ask" autocomplete="off">
-      <h1><label for="q">Ask your company's documents</label></h1>
-      <textarea id="q" rows="2" maxlength="2000" placeholder="Who has experience with SQL Server and data migration?" required></textarea>
-      <div class="ask-row">
-        <label class="mode">Search with
-          <select id="mode">
-            <option value="graph">Graph and meaning</option>
-            <option value="hybrid">Graph, meaning and keywords</option>
-            <option value="vector">Meaning only</option>
-            <option value="lexical">Keywords only</option>
-          </select>
-        </label>
-        <button type="submit" id="ask-btn">Ask</button>
-      </div>
-      <div class="suggest" id="suggest">
-        <span>Try</span>
-        <button type="button">Who are the experts in payroll and benefits administration?</button>
-        <button type="button">Which employees know both AutoCAD and project scheduling?</button>
-        <button type="button">Recommend profiles similar to a network administrator.</button>
-      </div>
-    </form>
+<canvas id="backdrop" aria-hidden="true"></canvas>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="#ask" aria-label="CRAG, ask">C<span>RAG</span><small>ENTERPRISE</small></a>
+    <p class="workspace-label">WORKSPACE</p>
+    <nav aria-label="Views">
+      <a class="nav-item" href="#ask" data-view-link="ask">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Ask</a>
+      <a class="nav-item" href="#documents" data-view-link="documents">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>Documents<b id="count-docs"></b></a>
+      <a class="nav-item" href="#graph" data-view-link="graph">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>Graph<b id="count-entities"></b></a>
+    </nav>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-note">
+      <p>Every answer is checked against the words of your documents.</p>
     </div>
-
-    <section id="result" class="result" hidden aria-live="polite">
-      <div class="claims-col">
-        <p class="meta" id="meta"></p>
-        <div id="answer" class="answer"></div>
-        <div id="experts"></div>
-        <div id="recs"></div>
-        <details class="steps-log">
-          <summary>Workflow steps</summary>
-          <ol id="trace"></ol>
-        </details>
-      </div>
-      <div class="evidence-col">
-        <h2>Evidence</h2>
-        <p class="hint">Highlighted words are the quotes the answer was checked against.</p>
-        <ol id="sources" class="sources"></ol>
-        <h2>Graph used for this answer</h2>
-        <p class="hint">Ringed: entities from your question. Teal: relations the answer cites.</p>
-        <div id="qgraph" class="graph small" role="img" aria-label="Knowledge graph around the question"></div>
-      </div>
-    </section>
-
-    <section class="how" aria-labelledby="how-title">
-      <h2 id="how-title">How an answer is made</h2>
-      <ol>
-        <li><b>Understand.</b> The question is classified as a lookup, an expert search or a recommendation, and its key names are picked out.</li>
-        <li><b>Retrieve.</b> Passages are found by meaning (and by keywords if you choose), and the graph is walked two relations deep.</li>
-        <li><b>Check the evidence.</b> If it is thin, the question is rewritten and retrieval runs once more.</li>
-        <li><b>Answer.</b> The model writes short claims, each with the passages and facts it relies on.</li>
-        <li><b>Verify.</b> Every quoted phrase must appear word for word in its passage. Claims that fail are removed.</li>
-      </ol>
-    </section>
-  </section>
-
-  <section id="graph" class="view" data-view="graph" hidden>
-    <div class="view-head">
-      <h1>Knowledge graph</h1>
-      <p id="stats" class="hint"></p>
+    <div class="identity">
+      <div aria-hidden="true">KD</div>
+      <p>PFE demo<small id="status">Connecting…</small></p>
     </div>
-    <div id="biggraph" class="graph large" role="img" aria-label="Most connected entities of the knowledge graph"></div>
-    <ul class="legend" id="legend"></ul>
-  </section>
+  </aside>
 
-  <section id="documents" class="view" data-view="documents" hidden>
-    <div class="view-head">
-      <h1>Documents</h1>
-      <p class="hint">Pick a document to see the ones closest to it, by meaning and by shared entities.</p>
-    </div>
-    <div class="docs">
-      <ul id="doclist" class="doclist"></ul>
-      <div id="similar" class="similar"><p class="hint">No document picked yet.</p></div>
-    </div>
-  </section>
-</main>
+  <div class="main-surface">
+    <header class="topbar">
+      <p id="crumb">Ask</p>
+      <p class="muted" id="topstats"></p>
+    </header>
 
-<footer class="foot">
-  <p>CRAG, a final-year project (PFE) by Daoudi Ahmed Khalil, MDSE, Ecole Hassania des Travaux Publics, 2025/2026. Supervised by Dr. Abdelali El Bouchti.</p>
-</footer>
+    <main id="main">
+      <section id="ask" class="view content ask-content" data-view="ask">
+        <div class="ask-intro">
+          <p class="eyebrow"><span class="mark-glyph" aria-hidden="true">✳</span>VERIFIED ANSWERS</p>
+          <h1>Ask what your documents <em>already know</em>.</h1>
+          <p>Answers drawn from a knowledge graph of your documents, each claim backed by the exact words it came from.</p>
+        </div>
+
+        <form id="ask-form" class="question-box" autocomplete="off">
+          <label for="q" class="sr">Your question</label>
+          <textarea id="q" rows="3" maxlength="2000" placeholder="Who has experience with SQL Server and data migration?" required></textarea>
+          <div class="query-controls">
+            <label class="mode"><span class="sr">Search with</span>
+              <select id="mode">
+                <option value="graph">Graph and meaning</option>
+                <option value="hybrid">Graph, meaning and keywords</option>
+                <option value="vector">Meaning only</option>
+                <option value="lexical">Keywords only</option>
+              </select>
+            </label>
+            <button type="submit" id="ask-btn" class="ask-button" aria-label="Ask">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </form>
+        <div class="under-query"><span>Enter to ask, Shift + Enter for a new line</span></div>
+
+        <section id="result" class="answer-layout" hidden aria-live="polite">
+          <div class="answer">
+            <div class="answer-header"><span id="meta"></span><span id="latency"></span></div>
+            <h2 id="asked"></h2>
+            <div id="warnings"></div>
+            <div id="answer"></div>
+            <div id="experts"></div>
+            <div id="recs"></div>
+            <div class="graph-block">
+              <h3>Graph used for this answer</h3>
+              <p class="small">Ringed: entities from your question. Highlighted: relations the answer cites.</p>
+              <div id="qgraph" class="graph-canvas small" role="img" aria-label="Knowledge graph around the question"></div>
+            </div>
+            <details class="workflow">
+              <summary>Workflow steps</summary>
+              <ol id="trace"></ol>
+            </details>
+          </div>
+          <aside class="source-list">
+            <h3>Sources <span id="source-count"></span></h3>
+            <p class="small">Highlighted words are the quotes each claim was checked against.</p>
+            <ol id="sources"></ol>
+          </aside>
+        </section>
+
+        <section class="start-panel" id="start">
+          <div class="section-line"><h2>Try asking</h2></div>
+          <div class="question-suggestions" id="suggest">
+            <button type="button">Who are the experts in payroll and benefits administration?<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+            <button type="button">Which employees know both AutoCAD and project scheduling?<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+            <button type="button">Recommend profiles similar to a network administrator.<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          </div>
+        </section>
+      </section>
+
+      <section id="documents" class="view content" data-view="documents" hidden>
+        <div class="page-heading">
+          <h1>Documents</h1>
+          <p>Pick a document to see the ones closest to it, by meaning and by shared entities.</p>
+        </div>
+        <div class="section-toolbar">
+          <label class="search-box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <span class="sr">Filter documents</span><input id="doc-filter" type="search" placeholder="Filter by name"></label>
+          <span class="muted" id="doc-count"></span>
+        </div>
+        <div class="docs">
+          <ul id="doclist" class="document-list"></ul>
+          <div id="similar" class="similar"><p class="empty-inline">No document picked yet.</p></div>
+        </div>
+      </section>
+
+      <section id="graph" class="view content" data-view="graph" hidden>
+        <div class="page-heading">
+          <h1>Graph</h1>
+          <p>The most connected people, skills and organisations extracted from the documents.</p>
+        </div>
+        <div class="graph-stats" id="stats"></div>
+        <div id="biggraph" class="graph-canvas large" role="img" aria-label="Most connected entities of the knowledge graph"></div>
+        <ul class="legend" id="legend"></ul>
+      </section>
+    </main>
+
+    <footer class="workspace-footer">
+      <span>CRAG, PFE 2025/2026, EHTP</span>
+      <span>DAOUDI AHMED KHALIL</span>
+    </footer>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
 <script src="/static/app.js"></script>
-<script type="module" src="/static/wave.js"></script>
+<script type="module" src="/static/backdrop.js"></script>
 </body>
 </html>
