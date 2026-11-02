@@ -7,6 +7,7 @@ const color = (t) => css(TYPE_COLORS[t] || "--n-concept");
 const MODES = { graph: "Graph and meaning", hybrid: "Graph, meaning and keywords", vector: "Meaning only", lexical: "Keywords only" };
 const VIEWS = { ask: "Ask", documents: "Documents", graph: "Graph" };
 const ARROW = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+const TRASH = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>';
 const FILE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
 
 async function api(path, opts) {
@@ -36,7 +37,8 @@ statsReady.then((s) => {
   $("#count-entities").textContent = s.entities.toLocaleString();
   $("#topstats").textContent = `${s.documents} documents, ${s.chunks} passages`;
 });
-api("/api/health").then((h) => { $("#status").textContent = `${h.backend === "neo4j" ? "Neo4j" : "Memory"} backend${h.read_only ? ", read-only" : ""}`; })
+let readOnly = false;
+api("/api/health").then((h) => { readOnly = h.read_only; $("#status").textContent = `${h.backend === "neo4j" ? "Neo4j" : "Memory"} backend${h.read_only ? ", read-only" : ""}`; })
   .catch(() => { $("#status").textContent = "Server unreachable"; });
 
 // ---------- graph drawing
@@ -187,9 +189,10 @@ function renderDocs() {
   const shown = docs.filter((d) => d.title.toLowerCase().includes(f));
   $("#doc-count").textContent = `${shown.length} of ${docs.length}`;
   $("#doclist").innerHTML = shown.length
-    ? shown.map((d) => `<li><button type="button" class="document-row" data-id="${esc(d.id)}" aria-pressed="false"><span class="file-icon">${FILE}</span>
+    ? shown.map((d) => `<li class="document-row"><button type="button" class="doc-open" data-id="${esc(d.id)}" aria-pressed="false"><span class="file-icon">${FILE}</span>
         <span class="document-name"><strong>${esc(d.title)}</strong><span>${esc(d.source || "")}${d.chars ? `, ${Math.round(d.chars / 1000)}k characters` : ""}${d.ocr ? ", scanned" : ""}</span></span>
-        <span class="ready-state">Indexed</span></button></li>`).join("")
+        <span class="ready-state">Indexed</span></button>
+        <button type="button" class="doc-remove" data-remove="${esc(d.id)}" aria-label="Remove ${esc(d.title)}" title="Remove document">${TRASH}</button></li>`).join("")
     : `<li class="empty-inline">${docs.length ? "No document matches that filter." : "No documents yet. Add some with scripts/ingest.py or POST /api/ingest."}</li>`;
 }
 async function loadDocs() {
@@ -199,14 +202,97 @@ async function loadDocs() {
 $("#doc-filter").addEventListener("input", renderDocs);
 
 $("#doclist").addEventListener("click", async (e) => {
-  const b = e.target.closest("button"); if (!b) return;
-  $$("#doclist button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  const rm = e.target.closest("[data-remove]");
+  if (rm) return openDelete(docs.find((d) => d.id === rm.dataset.remove));
+  const b = e.target.closest(".doc-open"); if (!b) return;
+  $$("#doclist .doc-open").forEach((x) => x.setAttribute("aria-pressed", x === b));
   $("#similar").innerHTML = '<p class="loading">Finding the closest documents…</p>';
   try {
     const recs = await api(`/api/recommend?doc_id=${encodeURIComponent(b.dataset.id)}`);
     $("#similar").innerHTML = `<h2>Closest to ${esc(b.querySelector("strong").textContent)}</h2><p class="small">Score: 70% meaning, 30% shared entities.</p>` + recs.map((r) =>
       `<div class="rec"><span>${esc(r.title)}</span><span>${r.score.toFixed(2)}</span></div>`).join("");
   } catch (err) { $("#similar").innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+});
+
+// ---------- upload and remove (need the server's admin token; refused on a read-only deployment)
+// The token is kept only for this tab, so it is not retyped for every file.
+const TOKEN_KEY = "crag-admin-token";
+const savedToken = () => { try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; } };
+const saveToken = (t) => { try { sessionStorage.setItem(TOKEN_KEY, t); } catch { /* private mode: ask again next time */ } };
+
+async function refreshAfterChange() {
+  const s = await api("/api/stats").catch(() => null);
+  if (s) { $("#count-docs").textContent = s.documents; $("#count-entities").textContent = s.entities.toLocaleString(); $("#topstats").textContent = `${s.documents} documents, ${s.chunks} passages`; }
+  drawn.graph = false;  // redraw the graph view next time it is opened
+  if (drawn.docs) await loadDocs();
+}
+
+function prepareDialog(dlg, tokenInput, submit) {
+  dlg.querySelector(".readonly-note").hidden = !readOnly;
+  tokenInput.closest(".field").hidden = readOnly;
+  tokenInput.value = savedToken();
+  submit.disabled = readOnly;
+  dlg.showModal();
+}
+$$("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
+
+let picked = [];
+function showPicked() {
+  $("#upload-list").innerHTML = picked.map((f, i) => `<li data-i="${i}"><span>${esc(f.name)}</span><span class="state">${f.size < 1048576 ? `${Math.max(1, Math.round(f.size / 1024))} KB` : `${(f.size / 1048576).toFixed(1)} MB`}</span></li>`).join("");
+  $("#upload-submit").disabled = readOnly || !picked.length;
+}
+$("#upload-open").addEventListener("click", () => { picked = []; showPicked(); prepareDialog($("#upload-dialog"), $("#admin-token"), $("#upload-submit")); $("#upload-submit").disabled = true; });
+$("#upload-files").addEventListener("change", (e) => { picked = [...e.target.files]; showPicked(); });
+const dz = $("#dropzone");
+dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("over"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("over"));
+dz.addEventListener("drop", (e) => { e.preventDefault(); dz.classList.remove("over"); picked = [...e.dataTransfer.files]; showPicked(); });
+
+$("#upload-form").addEventListener("submit", async (e) => {
+  e.preventDefault();  // keep the dialog open to show each file's result
+  const token = $("#admin-token").value.trim(), btn = $("#upload-submit");
+  if (!token) { $("#admin-token").focus(); return; }
+  btn.disabled = true; btn.textContent = "Indexing…";
+  let changed = false;
+  for (const [i, f] of picked.entries()) {
+    const state = $(`#upload-list li[data-i="${i}"] .state`);
+    state.className = "state"; state.textContent = "Indexing…";
+    const body = new FormData(); body.append("file", f);
+    try {
+      const r = await api("/api/ingest", { method: "POST", headers: { "X-Admin-Token": token }, body });
+      saveToken(token); changed = true;
+      state.className = "state ok";
+      state.textContent = r.duplicate ? "Already indexed" : `Indexed: ${r.chunks} passages, ${r.relations} relations${r.replaced ? " (replaced old version)" : ""}`;
+    } catch (err) {
+      state.className = "state bad"; state.textContent = err.message;
+      if (/token/i.test(err.message)) break;  // a wrong token fails every file the same way
+    }
+  }
+  btn.textContent = "Upload and index"; btn.disabled = false;
+  if (changed) refreshAfterChange();
+});
+
+let removing = null;
+function openDelete(d) {
+  if (!d) return;
+  removing = d;
+  $("#delete-text").textContent = `"${d.title}" will be removed with its passages, the relations extracted from it, and any entity no other document mentions. This cannot be undone.`;
+  $("#delete-error").textContent = "";
+  prepareDialog($("#delete-dialog"), $("#admin-token-2"), $("#delete-submit"));
+}
+$("#delete-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const token = $("#admin-token-2").value.trim(), btn = $("#delete-submit");
+  if (!token) { $("#admin-token-2").focus(); return; }
+  btn.disabled = true; btn.textContent = "Removing…";
+  try {
+    await api(`/api/documents/${encodeURIComponent(removing.id)}`, { method: "DELETE", headers: { "X-Admin-Token": token } });
+    saveToken(token);
+    $("#delete-dialog").close();
+    $("#similar").innerHTML = '<p class="empty-inline">No document picked yet.</p>';
+    await refreshAfterChange();
+  } catch (err) { $("#delete-error").textContent = err.message; }
+  finally { btn.disabled = false; btn.textContent = "Remove document"; }
 });
 
 // Shareable questions: /?q=...&mode=hybrid opens the page and asks right away.

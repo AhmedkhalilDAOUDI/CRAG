@@ -39,7 +39,11 @@
   <div class="main-surface">
     <header class="topbar">
       <p id="crumb">Ask</p>
-      <p class="muted" id="topstats"></p>
+      <div class="topbar-right">
+        <p class="muted" id="topstats"></p>
+        <button type="button" class="upload-button" id="upload-open">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>Upload</button>
+      </div>
     </header>
 
     <main id="main">
@@ -137,6 +141,40 @@
     </footer>
   </div>
 </div>
+
+<dialog id="upload-dialog" class="dialog" aria-labelledby="upload-title">
+  <form method="dialog" id="upload-form">
+    <h2 id="upload-title">Upload documents</h2>
+    <p class="small">Each file is read, split into passages, and its people, skills and relations are extracted into the graph. This takes about a minute per document.</p>
+    <p class="readonly-note" hidden>This public demo is read-only, so it cannot store new documents. Run CRAG locally or with Docker to add your own.</p>
+    <label class="dropzone" id="dropzone">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      <span class="dz-title">Choose files or drop them here</span>
+      <span class="small">PDF (scanned pages are read with OCR), DOCX, TXT, MD, CSV, JSON or images, up to 20 MB each</span>
+      <input type="file" id="upload-files" multiple accept=".pdf,.docx,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.tif,.tiff">
+    </label>
+    <ul class="selected-files" id="upload-list"></ul>
+    <label class="field token-field"><span>Admin token</span><input type="password" id="admin-token" autocomplete="off" placeholder="CRAG_ADMIN_TOKEN from the server's .env"></label>
+    <div class="dialog-actions">
+      <button type="button" class="ghost" data-close>Close</button>
+      <button type="submit" class="primary" id="upload-submit" value="upload">Upload and index</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="delete-dialog" class="dialog" aria-labelledby="delete-title">
+  <form method="dialog" id="delete-form">
+    <h2 id="delete-title">Remove this document?</h2>
+    <p class="small" id="delete-text"></p>
+    <p class="readonly-note" hidden>This public demo is read-only, so documents cannot be removed here.</p>
+    <label class="field token-field"><span>Admin token</span><input type="password" id="admin-token-2" autocomplete="off" placeholder="CRAG_ADMIN_TOKEN from the server's .env"></label>
+    <p class="error" id="delete-error"></p>
+    <div class="dialog-actions">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="danger" id="delete-submit" value="delete">Remove document</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js"></script>
 <script src="/static/app.js"></script>
