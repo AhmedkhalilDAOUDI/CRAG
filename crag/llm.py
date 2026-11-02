@@ -55,13 +55,25 @@ def chat(messages: list[dict], max_tokens: int = 1024, temperature: float = 0.2)
     return (data["choices"][0]["message"].get("content") or "").strip()
 
 
+def _merge_duplicates(pairs):
+    """Models sometimes repeat a key ({"claims": [...], "claims": []}); json keeps only the last value.
+    Repeated lists are concatenated; for anything else the first value wins."""
+    out = {}
+    for k, v in pairs:
+        if isinstance(out.get(k), list) and isinstance(v, list):
+            out[k] = out[k] + v
+        else:
+            out.setdefault(k, v)
+    return out
+
+
 def parse_json(text: str):
     """Extract the first JSON object/array from a model reply (tolerates ``` fences and prose)."""
     text = re.sub(r"```(?:json)?", "", text)
     start = min([i for i in (text.find("{"), text.find("[")) if i != -1], default=-1)
     if start == -1:
         raise ValueError(f"No JSON in model output: {text[:200]}")
-    obj, _ = json.JSONDecoder().raw_decode(text[start:])
+    obj, _ = json.JSONDecoder(object_pairs_hook=_merge_duplicates).raw_decode(text[start:])
     return obj
 
 

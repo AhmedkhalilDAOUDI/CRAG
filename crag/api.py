@@ -1,9 +1,11 @@
 """HTTP API + static web UI."""
+import hmac
 import tempfile
 import time
 from collections import defaultdict, deque
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,7 +37,14 @@ def _rate_limit(request: Request):
 
 class AskIn(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
-    mode: str = Field("graph", pattern="^(graph|vector)$")
+    mode: str = Field("graph", pattern="^(graph|hybrid|vector|lexical)$")
+
+
+def _require_admin(token: str):
+    if settings.read_only:
+        raise HTTPException(403, "This deployment is read-only.")
+    if not settings.admin_token or not hmac.compare_digest(token.encode(), settings.admin_token.encode()):
+        raise HTTPException(401, "A valid X-Admin-Token header is required to change documents.")
 
 
 @app.get("/api/health")
@@ -52,6 +61,16 @@ def stats():
 @app.get("/api/documents")
 def documents():
     return sorted(get_store().documents(), key=lambda d: d.get("title", ""))
+
+
+@app.delete("/api/documents/{doc_id}")
+def delete_document(doc_id: str, x_admin_token: str = Header(default="")):
+    _require_admin(x_admin_token)
+    store = get_store()
+    if not store.delete_document(doc_id):
+        raise HTTPException(404, "Unknown document")
+    store.save()
+    return {"deleted": doc_id}
 
 
 @app.post("/api/ask")
@@ -85,10 +104,7 @@ def graph(limit: int = 150):
 
 @app.post("/api/ingest")
 async def ingest_endpoint(file: UploadFile = File(...), x_admin_token: str = Header(default="")):
-    if settings.read_only:
-        raise HTTPException(403, "This deployment is read-only.")
-    if not settings.admin_token or x_admin_token != settings.admin_token:
-        raise HTTPException(401, "A valid X-Admin-Token header is required to upload documents.")
+    _require_admin(x_admin_token)
     name = Path(file.filename or "upload").name
     if Path(name).suffix.lower() not in SUPPORTED:
         raise HTTPException(415, f"Supported types: {', '.join(sorted(SUPPORTED))}")
@@ -102,6 +118,8 @@ async def ingest_endpoint(file: UploadFile = File(...), x_admin_token: str = Hea
             return ingest_file(get_store(), path)
         except ValueError as e:
             raise HTTPException(422, str(e))
+        except httpx.HTTPError as e:  # extraction failed upstream: nothing was written, the upload can be retried
+            raise HTTPException(502, f"Model provider error, nothing was indexed: {type(e).__name__}")
 
 
 app.mount("/static", StaticFiles(directory=WEB), name="static")

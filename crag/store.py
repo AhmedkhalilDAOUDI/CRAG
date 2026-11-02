@@ -5,12 +5,23 @@ Graph model (both backends):
   (:Entity {type:'Person'})-[:AUTHORED]->(:Document)
 """
 import json
-from collections import defaultdict
+import math
+import re
+from collections import Counter, defaultdict
 
 import networkx as nx
 import numpy as np
 
 from .config import settings
+
+STOPWORDS = {"the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "is", "are", "was", "were", "be",
+             "by", "at", "as", "it", "its", "this", "that", "what", "which", "who", "whom", "how", "does", "do", "did",
+             "from", "has", "have", "had", "their", "there", "about", "any", "can"}
+
+
+def tokens(text: str) -> list[str]:
+    """Lexical-search terms: lower-cased words (any script), stopwords and single characters dropped."""
+    return [w for w in re.findall(r"\w+", text.lower()) if len(w) > 1 and w not in STOPWORDS]
 
 
 class MemoryStore:
@@ -27,6 +38,7 @@ class MemoryStore:
         self._cvec: dict[str, np.ndarray] = {}
         self._evec: dict[str, np.ndarray] = {}
         self._mat = None
+        self._bm25 = None
         self.load()
 
     # ----- writes
@@ -42,19 +54,39 @@ class MemoryStore:
         self._mat = None
 
     def add_chunk(self, chunk, vec, entity_keys):
-        self.chunks[chunk.id] = {"id": chunk.id, "doc_id": chunk.doc_id, "idx": chunk.idx, "text": chunk.text,
-                                 "entities": sorted(set(k for k in entity_keys if k in self.entities))}
+        self.chunks[chunk.id] = {"id": chunk.id, "doc_id": chunk.doc_id, "idx": chunk.idx, "page": chunk.page,
+                                 "text": chunk.text, "entities": sorted(set(k for k in entity_keys if k in self.entities))}
         self._cvec[chunk.id] = np.asarray(vec, np.float32)
         for k in self.chunks[chunk.id]["entities"]:
             self.mentions[k].add(chunk.id)
-        self._mat = None
+        self._mat = self._bm25 = None
 
-    def add_relation(self, src, tgt, rtype, desc, doc_id):
+    def add_relation(self, src, tgt, rtype, desc, doc_id, quote=""):
         if src in self.entities and tgt in self.entities and src != tgt:
-            self.g.add_edge(src, tgt, type=rtype, description=desc, doc_id=doc_id)
+            self.g.add_edge(src, tgt, type=rtype, description=desc, doc_id=doc_id, quote=quote)
 
     def add_authorship(self, person_key, doc_id):
         self.authors[doc_id] = person_key
+
+    def delete_document(self, doc_id):
+        """Remove a document, its chunks, the relations extracted from it, and entities left with no link."""
+        if self.docs.pop(doc_id, None) is None:
+            return False
+        self.authors.pop(doc_id, None)
+        for cid in [c for c, ch in self.chunks.items() if ch["doc_id"] == doc_id]:
+            for k in self.chunks.pop(cid)["entities"]:
+                self.mentions[k].discard(cid)
+            self._cvec.pop(cid, None)
+        self.g.remove_edges_from([(u, v, k) for u, v, k, d in self.g.edges(keys=True, data=True)
+                                  if d.get("doc_id") == doc_id])
+        authors = set(self.authors.values())
+        for k in [k for k in self.entities if not self.mentions.get(k) and not self.g.degree(k) and k not in authors]:
+            del self.entities[k]
+            self._evec.pop(k, None)
+            self.mentions.pop(k, None)
+            self.g.remove_node(k)
+        self._mat = self._bm25 = None
+        return True
 
     # ----- persistence
     def save(self):
@@ -99,6 +131,20 @@ class MemoryStore:
         s = cm @ qvec
         return [(self.chunks[ck[i]], float(s[i])) for i in np.argsort(-s)[:k]]
 
+    def search_text(self, query, k):
+        """BM25 (k1=1.2, b=0.75) over chunk text. Chunks sharing no term with the query are not returned."""
+        if self._bm25 is None:
+            ids = list(self.chunks)
+            tfs = [Counter(tokens(self.chunks[c]["text"])) for c in ids]
+            lens = [sum(tf.values()) for tf in tfs]
+            self._bm25 = (ids, tfs, lens, sum(lens) / max(len(lens), 1), Counter(t for tf in tfs for t in tf))
+        ids, tfs, lens, avg, df = self._bm25
+        terms = set(tokens(query))
+        idf = {t: math.log(1 + (len(ids) - df[t] + 0.5) / (df[t] + 0.5)) for t in terms}
+        scores = [(sum(idf[t] * tf[t] * 2.2 / (tf[t] + 1.2 * (0.25 + 0.75 * n / avg)) for t in terms if t in tf), cid)
+                  for cid, tf, n in zip(ids, tfs, lens)]
+        return [(self.chunks[cid], s) for s, cid in sorted(scores, reverse=True)[:k] if s > 0]
+
     def search_entities(self, qvec, k):
         _, _, ek, em = self._matrices()
         if not ek:
@@ -119,7 +165,8 @@ class MemoryStore:
                     dist[n] = min(d, dist.get(n, 99))
         keep = set(sorted(dist, key=lambda n: (dist[n], -und.degree(n)))[:limit])
         edges = [{"source": u, "target": v, "type": d["type"], "description": d.get("description", ""),
-                  "doc_id": d.get("doc_id")} for u, v, d in self.g.subgraph(keep).edges(data=True)]
+                  "doc_id": d.get("doc_id"), "quote": d.get("quote", "")}
+                 for u, v, d in self.g.subgraph(keep).edges(data=True)]
         return [dict(self.entities[n], hops=dist[n]) for n in keep], edges
 
     def chunks_for_entities(self, keys, limit=20):
@@ -169,6 +216,7 @@ class Neo4jStore:
             "CREATE CONSTRAINT entity_key IF NOT EXISTS FOR (e:Entity) REQUIRE e.key IS UNIQUE",
             f"CREATE VECTOR INDEX chunk_vec IF NOT EXISTS FOR (c:Chunk) ON c.embedding OPTIONS "
             f"{{indexConfig: {{`vector.dimensions`: {dim}, `vector.similarity_function`: 'cosine'}}}}",
+            "CREATE FULLTEXT INDEX chunk_text IF NOT EXISTS FOR (c:Chunk) ON EACH [c.text]",  # Lucene BM25
             f"CREATE VECTOR INDEX entity_vec IF NOT EXISTS FOR (e:Entity) ON e.embedding OPTIONS "
             f"{{indexConfig: {{`vector.dimensions`: {dim}, `vector.similarity_function`: 'cosine'}}}}",
         ]:
@@ -189,19 +237,31 @@ class Neo4jStore:
 
     def add_chunk(self, chunk, vec, entity_keys):
         self._run("MATCH (d:Document {id:$doc}) MERGE (c:Chunk {id:$id}) "
-                  "SET c.text=$text, c.idx=$idx, c.doc_id=$doc, c.embedding=$vec MERGE (d)-[:HAS_CHUNK]->(c) "
+                  "SET c.text=$text, c.idx=$idx, c.page=$page, c.doc_id=$doc, c.embedding=$vec MERGE (d)-[:HAS_CHUNK]->(c) "
                   "WITH c UNWIND $keys AS k MATCH (e:Entity {key:k}) MERGE (c)-[:MENTIONS]->(e)",
-                  doc=chunk.doc_id, id=chunk.id, text=chunk.text, idx=chunk.idx,
+                  doc=chunk.doc_id, id=chunk.id, text=chunk.text, idx=chunk.idx, page=chunk.page,
                   vec=[float(x) for x in vec], keys=list(set(entity_keys)))
 
-    def add_relation(self, src, tgt, rtype, desc, doc_id):
+    def add_relation(self, src, tgt, rtype, desc, doc_id, quote=""):
         if src != tgt:
             self._run("MATCH (a:Entity {key:$s}), (b:Entity {key:$t}) "
-                      "MERGE (a)-[r:RELATED {type:$type, doc_id:$doc}]->(b) SET r.description=$desc",
-                      s=src, t=tgt, type=rtype, desc=desc, doc=doc_id)
+                      "MERGE (a)-[r:RELATED {type:$type, doc_id:$doc}]->(b) SET r.description=$desc, r.quote=$quote",
+                      s=src, t=tgt, type=rtype, desc=desc, doc=doc_id, quote=quote)
 
     def add_authorship(self, person_key, doc_id):
         self._run("MATCH (p:Entity {key:$p}), (d:Document {id:$d}) MERGE (p)-[:AUTHORED]->(d)", p=person_key, d=doc_id)
+
+    def delete_document(self, doc_id):
+        """Same cleanup as MemoryStore.delete_document, in one transaction."""
+        def work(tx):
+            if tx.run("MATCH (d:Document {id:$d}) RETURN d.id", d=doc_id).single() is None:
+                return False
+            tx.run("MATCH ()-[r:RELATED {doc_id:$d}]->() DELETE r", d=doc_id)
+            tx.run("MATCH (d:Document {id:$d}) OPTIONAL MATCH (d)-[:HAS_CHUNK]->(c:Chunk) DETACH DELETE d, c", d=doc_id)
+            tx.run("MATCH (e:Entity) WHERE NOT (e)--() DELETE e")
+            return True
+        with self.driver.session() as s:
+            return s.execute_write(work)
 
     def save(self):
         pass  # Neo4j commits each write transaction
@@ -209,15 +269,26 @@ class Neo4jStore:
     # ----- reads
     @staticmethod
     def _chunk(r):
-        return {"id": r["id"], "doc_id": r["doc_id"], "idx": r["idx"], "text": r["text"], "entities": r["entities"]}
+        return {"id": r["id"], "doc_id": r["doc_id"], "idx": r["idx"], "page": r.get("page"), "text": r["text"],
+                "entities": r["entities"]}
 
     def search_chunks(self, qvec, k):
         rows = self._run("CALL db.index.vector.queryNodes('chunk_vec', $k, $q) YIELD node, score "
                          "OPTIONAL MATCH (node)-[:MENTIONS]->(e:Entity) "
-                         "RETURN node.id AS id, node.doc_id AS doc_id, node.idx AS idx, node.text AS text, "
+                         "RETURN node.id AS id, node.doc_id AS doc_id, node.idx AS idx, node.page AS page, node.text AS text, "
                          "collect(e.key) AS entities, score ORDER BY score DESC", k=k, q=[float(x) for x in qvec])
         # Neo4j cosine score is (1 + cos) / 2; convert back to cosine so both backends agree.
         return [(self._chunk(r), 2 * r["score"] - 1) for r in rows]
+
+    def search_text(self, query, k):
+        terms = " ".join(tokens(query))  # plain words only: Lucene operators and syntax never reach the index
+        if not terms:
+            return []
+        rows = self._run("CALL db.index.fulltext.queryNodes('chunk_text', $q, {limit: $k}) YIELD node, score "
+                         "OPTIONAL MATCH (node)-[:MENTIONS]->(e:Entity) "
+                         "RETURN node.id AS id, node.doc_id AS doc_id, node.idx AS idx, node.page AS page, "
+                         "node.text AS text, collect(e.key) AS entities, score ORDER BY score DESC", q=terms, k=k)
+        return [(self._chunk(r), r["score"]) for r in rows]
 
     def search_entities(self, qvec, k):
         rows = self._run("CALL db.index.vector.queryNodes('entity_vec', $k, $q) YIELD node, score "
@@ -238,14 +309,14 @@ class Neo4jStore:
             keys=list(keys), limit=limit)
         edges = self._run("MATCH (a:Entity)-[r:RELATED]->(b:Entity) WHERE a.key IN $ks AND b.key IN $ks "
                           "RETURN a.key AS source, b.key AS target, r.type AS type, r.description AS description, "
-                          "r.doc_id AS doc_id", ks=[n["key"] for n in nodes])
+                          "r.doc_id AS doc_id, coalesce(r.quote, '') AS quote", ks=[n["key"] for n in nodes])
         return nodes, edges
 
     def chunks_for_entities(self, keys, limit=20):
         rows = self._run("MATCH (c:Chunk)-[:MENTIONS]->(e:Entity) WHERE e.key IN $keys "
                          "WITH c, count(e) AS n ORDER BY n DESC LIMIT $limit "
                          "OPTIONAL MATCH (c)-[:MENTIONS]->(x:Entity) "
-                         "RETURN c.id AS id, c.doc_id AS doc_id, c.idx AS idx, c.text AS text, "
+                         "RETURN c.id AS id, c.doc_id AS doc_id, c.idx AS idx, c.page AS page, c.text AS text, "
                          "collect(x.key) AS entities, n", keys=list(keys), limit=limit)
         return [(self._chunk(r), r["n"]) for r in rows]
 
@@ -296,9 +367,9 @@ def copy_memory_to_neo4j(mem: MemoryStore, neo: Neo4jStore) -> None:
     for k, e in mem.entities.items():
         neo.upsert_entity(k, e, mem._evec[k])
     for c in mem.chunks.values():
-        neo.add_chunk(Chunk(c["id"], c["doc_id"], c["idx"], c["text"]), mem._cvec[c["id"]], c["entities"])
+        neo.add_chunk(Chunk(c["id"], c["doc_id"], c["idx"], c["text"], c.get("page")), mem._cvec[c["id"]], c["entities"])
     for u, v, d in mem.g.edges(data=True):
-        neo.add_relation(u, v, d["type"], d.get("description", ""), d.get("doc_id"))
+        neo.add_relation(u, v, d["type"], d.get("description", ""), d.get("doc_id"), d.get("quote", ""))
     for doc_id, p in mem.authors.items():
         neo.add_authorship(p, doc_id)
 
