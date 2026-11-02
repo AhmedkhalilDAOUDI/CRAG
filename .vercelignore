@@ -7,3 +7,9 @@ scripts
 *.md
 data/*.log
 data/eval
+# Secrets and local-only files: production reads its settings from Vercel environment variables
+.env
+.env.local
+.claude
+.github
+.pytest_cache
